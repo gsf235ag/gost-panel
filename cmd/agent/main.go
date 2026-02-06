@@ -20,7 +20,12 @@ import (
 	"time"
 )
 
-const AgentVersion = "1.3.0"
+// 版本信息 - 通过 ldflags 在构建时注入
+var (
+	AgentVersion   = "dev"
+	AgentBuildTime = "unknown"
+	AgentCommit    = "unknown"
+)
 
 var (
 	panelURL    = flag.String("panel", "", "Panel URL (e.g., http://panel.example.com:8080)")
@@ -790,6 +795,8 @@ func main() {
 
 	if *showVersion {
 		fmt.Printf("gost-agent version %s (%s/%s)\n", AgentVersion, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("Build time: %s\n", AgentBuildTime)
+		fmt.Printf("Commit: %s\n", AgentCommit)
 		os.Exit(0)
 	}
 

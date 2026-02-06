@@ -217,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
+import { ref, h, onMounted, onUnmounted, computed } from 'vue'
 import { NButton, NSpace, NTag, useMessage, useDialog } from 'naive-ui'
 import {
   getNotifyChannels,
@@ -236,6 +236,9 @@ import TableSkeleton from '../components/TableSkeleton.vue'
 
 const message = useMessage()
 const dialog = useDialog()
+
+// 组件卸载标志
+let isUnmounted = false
 
 const channelsLoading = ref(false)
 const rulesLoading = ref(false)
@@ -292,8 +295,9 @@ const silenceDurationMin = computed({
 })
 
 const channelOptions = computed(() => {
+  if (!Array.isArray(channels.value)) return []
   return channels.value
-    .filter((c: any) => c.enabled)
+    .filter((c: any) => c && c.enabled)
     .map((c: any) => ({
       label: `${c.name} (${getChannelTypeLabel(c.type)})`,
       value: c.id,
@@ -427,42 +431,49 @@ const logColumns = [
 ]
 
 const loadChannels = async () => {
+  if (isUnmounted) return
   channelsLoading.value = true
   try {
     const data: any = await getNotifyChannels()
-    channels.value = data || []
+    if (isUnmounted) return
+    channels.value = Array.isArray(data) ? data : []
   } catch (e) {
-    message.error('加载通知渠道失败')
+    if (!isUnmounted) message.error('加载通知渠道失败')
   } finally {
-    channelsLoading.value = false
+    if (!isUnmounted) channelsLoading.value = false
   }
 }
 
 const loadRules = async () => {
+  if (isUnmounted) return
   rulesLoading.value = true
   try {
     const data: any = await getAlertRules()
+    if (isUnmounted) return
     // 确保 channel_ids 始终是数组
-    rules.value = (data || []).map((rule: any) => ({
+    const rulesData = Array.isArray(data) ? data : []
+    rules.value = rulesData.map((rule: any) => ({
       ...rule,
       channel_ids: Array.isArray(rule.channel_ids) ? rule.channel_ids : []
     }))
   } catch (e) {
-    message.error('加载告警规则失败')
+    if (!isUnmounted) message.error('加载告警规则失败')
   } finally {
-    rulesLoading.value = false
+    if (!isUnmounted) rulesLoading.value = false
   }
 }
 
 const loadLogs = async () => {
+  if (isUnmounted) return
   logsLoading.value = true
   try {
     const data: any = await getAlertLogs({ limit: 100 })
-    logs.value = data || []
+    if (isUnmounted) return
+    logs.value = Array.isArray(data) ? data : []
   } catch (e) {
-    message.error('加载告警日志失败')
+    if (!isUnmounted) message.error('加载告警日志失败')
   } finally {
-    logsLoading.value = false
+    if (!isUnmounted) logsLoading.value = false
   }
 }
 
@@ -626,6 +637,10 @@ onMounted(() => {
   loadChannels()
   loadRules()
   loadLogs()
+})
+
+onUnmounted(() => {
+  isUnmounted = true
 })
 </script>
 

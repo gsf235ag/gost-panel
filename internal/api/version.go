@@ -23,9 +23,10 @@ type AgentVersion struct {
 }
 
 // CurrentAgentVersion is the current agent version
-// This should be updated when releasing new agent versions
-var CurrentAgentVersion = "1.3.0"
-var AgentBuildTime = "2026-02-06"
+// This can be overridden via ldflags at build time:
+// go build -ldflags "-X github.com/AliceNetworks/gost-panel/internal/api.CurrentAgentVersion=1.4.0"
+var CurrentAgentVersion = "dev"
+var AgentBuildTime = "unknown"
 
 // agentGetVersion returns the current agent version
 func (s *Server) agentGetVersion(c *gin.Context) {

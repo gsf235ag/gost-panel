@@ -1,12 +1,20 @@
 <template>
   <n-layout has-sider class="layout">
+    <!-- 移动端遮罩层 -->
+    <div
+      v-if="isMobile && !collapsed"
+      class="mobile-overlay"
+      @click="collapsed = true"
+    />
+
     <n-layout-sider
       bordered
       collapse-mode="width"
-      :collapsed-width="64"
+      :collapsed-width="isMobile ? 0 : 64"
       :width="200"
-      show-trigger
+      :show-trigger="!isMobile"
       :collapsed="collapsed"
+      :class="{ 'mobile-sider': isMobile }"
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
@@ -25,9 +33,19 @@
     </n-layout-sider>
     <n-layout>
       <n-layout-header bordered class="header">
-        <div class="header-title">{{ currentTitle }}</div>
+        <div class="header-left">
+          <!-- 移动端汉堡菜单 -->
+          <n-button v-if="isMobile" quaternary circle class="menu-toggle" @click="collapsed = !collapsed">
+            <template #icon>
+              <n-icon size="22">
+                <menu-outline />
+              </n-icon>
+            </template>
+          </n-button>
+          <div class="header-title">{{ currentTitle }}</div>
+        </div>
         <div class="header-actions">
-          <GlobalSearch />
+          <GlobalSearch v-if="!isMobile" />
           <n-button quaternary circle @click="themeStore.toggle">
             <template #icon>
               <n-icon>
@@ -37,8 +55,8 @@
             </template>
           </n-button>
           <n-dropdown :options="userOptions" @select="handleUserAction">
-            <n-button quaternary>
-              {{ userStore.user?.username || 'admin' }}
+            <n-button quaternary class="user-btn">
+              <span class="username">{{ userStore.user?.username || 'admin' }}</span>
             </n-button>
           </n-dropdown>
         </div>
@@ -90,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon } from 'naive-ui'
 import {
@@ -108,6 +126,7 @@ import {
   LinkOutline,
   SettingsOutline,
   ListOutline,
+  MenuOutline,
 } from '@vicons/ionicons5'
 import { useUserStore } from '../stores/user'
 import { useThemeStore } from '../stores/theme'
@@ -120,6 +139,18 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const themeStore = useThemeStore()
+
+// 移动端检测
+const isMobile = ref(false)
+const MOBILE_BREAKPOINT = 768
+
+const checkMobile = () => {
+  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+  // 移动端默认折叠侧边栏
+  if (isMobile.value) {
+    collapsed.value = true
+  }
+}
 
 const collapsed = ref(false)
 const showPasswordModal = ref(false)
@@ -222,10 +253,24 @@ const currentTitle = computed(() => {
 })
 
 const handleMenuSelect = (key: string) => {
-  if (key === currentMenu.value) return
-  // 使用同步调用，不等待结果
-  router.push({ name: key }).catch(() => {
-    // 忽略导航错误
+  console.log('[Menu] Selected:', key, '| Current:', currentMenu.value)
+  if (key === currentMenu.value) {
+    console.log('[Menu] Same as current, skipping')
+    // 移动端点击同一菜单也折叠侧边栏
+    if (isMobile.value) {
+      collapsed.value = true
+    }
+    return
+  }
+  console.log('[Menu] Navigating to:', key)
+  router.push({ name: key }).then(() => {
+    console.log('[Menu] Navigation success')
+    // 移动端导航后自动折叠侧边栏
+    if (isMobile.value) {
+      collapsed.value = true
+    }
+  }).catch((err) => {
+    console.error('[Menu] Navigation error:', err)
   })
 }
 
@@ -321,6 +366,12 @@ const loadSiteConfig = async () => {
 
 onMounted(() => {
   loadSiteConfig()
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
 })
 </script>
 
@@ -352,6 +403,12 @@ onMounted(() => {
   justify-content: space-between;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .header-title {
   font-size: 18px;
   font-weight: 600;
@@ -367,6 +424,31 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 移动端遮罩 */
+.mobile-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+/* 移动端侧边栏 */
+.mobile-sider {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  z-index: 1000;
+  transition: transform 0.3s ease;
+}
+
+.mobile-sider:deep(.n-layout-sider-scroll-container) {
+  height: 100%;
 }
 
 /* 暗色模式样式 */
@@ -419,5 +501,45 @@ onMounted(() => {
   height: 60%;
   background: linear-gradient(180deg, #3b82f6, #8b5cf6);
   border-radius: 0 2px 2px 0;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .header {
+    padding: 0 12px;
+  }
+
+  .header-title {
+    font-size: 16px;
+  }
+
+  .content {
+    padding: 12px;
+  }
+
+  .username {
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-btn {
+    padding: 0 8px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0 8px;
+  }
+
+  .header-title {
+    font-size: 14px;
+  }
+
+  .content {
+    padding: 8px;
+  }
 }
 </style>
