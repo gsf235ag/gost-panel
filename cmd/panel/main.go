@@ -61,6 +61,9 @@ func main() {
 	// 启动流量历史记录定时任务
 	go startTrafficRecorder(svc)
 
+	// 启动会话清理定时任务
+	go startSessionCleaner(svc)
+
 	// 启动 API 服务
 	server := api.NewServer(svc, cfg)
 
@@ -110,6 +113,19 @@ func startTrafficRecorder(svc *service.Service) {
 	for range ticker.C {
 		if err := svc.RecordTrafficHistory(); err != nil {
 			log.Printf("Failed to record traffic history: %v", err)
+		}
+	}
+}
+
+// startSessionCleaner 启动会话清理定时任务
+func startSessionCleaner(svc *service.Service) {
+	// 每小时清理一次过期会话
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := svc.CleanupExpiredSessions(); err != nil {
+			log.Printf("Failed to cleanup expired sessions: %v", err)
 		}
 	}
 }

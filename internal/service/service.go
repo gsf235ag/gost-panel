@@ -526,7 +526,7 @@ func (s *Service) ApplyNodeConfig(nodeID uint) error {
 
 func (s *Service) GetUserByUsername(username string) (*model.User, error) {
 	var user model.User
-	err := s.db.Where("username = ?", username).First(&user).Error
+	err := s.db.Preload("Plan").Where("username = ?", username).First(&user).Error
 	return &user, err
 }
 
@@ -551,7 +551,7 @@ func (s *Service) ListUsers() ([]model.User, error) {
 // GetUser 获取单个用户
 func (s *Service) GetUser(id uint) (*model.User, error) {
 	var user model.User
-	err := s.db.First(&user, id).Error
+	err := s.db.Preload("Plan").First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -2413,3 +2413,76 @@ func getResourceTypeName(resourceType string) string {
 	}
 	return resourceType
 }
+
+// ==================== 会话管理 ====================
+
+// CreateUserSession 创建用户会话
+func (s *Service) CreateUserSession(userID uint, jti, ip, userAgent string, expiresAt time.Time) error {
+	session := &model.UserSession{
+		UserID:     userID,
+		TokenJTI:   jti,
+		IP:         ip,
+		UserAgent:  userAgent,
+		CreatedAt:  time.Now(),
+		ExpiresAt:  expiresAt,
+		LastActive: time.Now(),
+	}
+	return s.db.Create(session).Error
+}
+
+// ValidateSession 验证会话是否有效
+func (s *Service) ValidateSession(jti string) bool {
+	var session model.UserSession
+	if err := s.db.Where("token_jti = ? AND expires_at > ?", jti, time.Now()).First(&session).Error; err != nil {
+		return false
+	}
+	return true
+}
+
+// UpdateSessionActivity 更新会话活跃时间（每5分钟更新一次）
+func (s *Service) UpdateSessionActivity(jti string) {
+	var session model.UserSession
+	if err := s.db.Where("token_jti = ?", jti).First(&session).Error; err != nil {
+		return
+	}
+
+	// 只有距离上次更新超过5分钟才更新
+	if time.Since(session.LastActive) > 5*time.Minute {
+		s.db.Model(&session).Update("last_active", time.Now())
+	}
+}
+
+// GetUserSessions 获取用户的所有活跃会话
+func (s *Service) GetUserSessions(userID uint) ([]model.UserSession, error) {
+	var sessions []model.UserSession
+	err := s.db.Where("user_id = ? AND expires_at > ?", userID, time.Now()).
+		Order("created_at DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
+// GetSessionByID 根据ID获取会话
+func (s *Service) GetSessionByID(id uint) (*model.UserSession, error) {
+	var session model.UserSession
+	err := s.db.First(&session, id).Error
+	return &session, err
+}
+
+// DeleteSession 删除指定会话
+func (s *Service) DeleteSession(id uint) error {
+	return s.db.Delete(&model.UserSession{}, id).Error
+}
+
+// DeleteOtherSessions 删除除指定JTI外的所有会话
+func (s *Service) DeleteOtherSessions(userID uint, currentJTI string) (int64, error) {
+	result := s.db.Where("user_id = ? AND token_jti != ?", userID, currentJTI).
+		Delete(&model.UserSession{})
+	return result.RowsAffected, result.Error
+}
+
+// CleanupExpiredSessions 清理过期会话（定时任务）
+func (s *Service) CleanupExpiredSessions() error {
+	result := s.db.Where("expires_at < ?", time.Now()).Delete(&model.UserSession{})
+	return result.Error
+}
+

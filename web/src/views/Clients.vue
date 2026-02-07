@@ -12,6 +12,15 @@
           <n-space>
             <!-- 批量操作按钮 -->
             <template v-if="selectedRowKeys.length > 0">
+              <n-button @click="handleBatchEnable" :loading="batchLoading">
+                批量启用
+              </n-button>
+              <n-button @click="handleBatchDisable" :loading="batchLoading">
+                批量禁用
+              </n-button>
+              <n-button type="warning" @click="handleBatchSync" :loading="batchLoading">
+                批量同步
+              </n-button>
               <n-button type="error" @click="handleBatchDelete" :loading="batchLoading">
                 批量删除
               </n-button>
@@ -194,7 +203,7 @@
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue'
 import { NButton, NSpace, NTag, NTabs, NTabPane, NDropdown, NDivider, useMessage, useDialog } from 'naive-ui'
-import { getClientsPaginated, createClient, updateClient, deleteClient, getClientInstallScript, getClientGostConfig, getClientProxyURI, getNodes, batchDeleteClients, cloneClient } from '../api'
+import { getClientsPaginated, createClient, updateClient, deleteClient, getClientInstallScript, getClientGostConfig, getClientProxyURI, getNodes, batchEnableClients, batchDisableClients, batchDeleteClients, batchSyncClients, cloneClient } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import { useKeyboard } from '../composables/useKeyboard'
@@ -567,6 +576,53 @@ const handleBatchDelete = () => {
       }
     }
   })
+}
+
+const handleBatchEnable = async () => {
+  if (selectedRowKeys.value.length === 0) return
+
+  batchLoading.value = true
+  try {
+    const result: any = await batchEnableClients(selectedRowKeys.value)
+    message.success(result.message || `成功启用 ${result.success} 个客户端`)
+    selectedRowKeys.value = []
+    await loadClients()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '批量启用失败')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+const handleBatchDisable = async () => {
+  if (selectedRowKeys.value.length === 0) return
+
+  batchLoading.value = true
+  try {
+    const result: any = await batchDisableClients(selectedRowKeys.value)
+    message.success(result.message || `成功禁用 ${result.success} 个客户端`)
+    selectedRowKeys.value = []
+    await loadClients()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '批量禁用失败')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+const handleBatchSync = async () => {
+  if (selectedRowKeys.value.length === 0) return
+
+  batchLoading.value = true
+  try {
+    const result: any = await batchSyncClients(selectedRowKeys.value)
+    message.success(result.message || `成功同步 ${result.success} 个客户端`)
+    selectedRowKeys.value = []
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '批量同步失败')
+  } finally {
+    batchLoading.value = false
+  }
 }
 
 onMounted(() => {

@@ -11,7 +11,9 @@
         <h1 class="login-title">{{ siteConfig.site_name || 'GOST Panel' }}</h1>
         <p class="login-subtitle">{{ siteConfig.site_description || '代理服务管理平台' }}</p>
       </div>
-      <n-form ref="formRef" :model="form" :rules="rules">
+
+      <!-- 普通登录表单 -->
+      <n-form v-if="!requires2FA" ref="formRef" :model="form" :rules="rules">
         <n-form-item path="username" label="用户名">
           <n-input v-model:value="form.username" placeholder="admin" />
         </n-form-item>
@@ -27,6 +29,29 @@
           登录
         </n-button>
       </n-form>
+
+      <!-- 2FA 验证表单 -->
+      <n-form v-else ref="twoFAFormRef" :model="twoFAForm">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <p style="color: rgba(255, 255, 255, 0.7); margin-bottom: 8px;">请输入双因素验证码</p>
+          <p style="color: rgba(255, 255, 255, 0.5); font-size: 12px;">打开验证器 App 获取 6 位数字验证码</p>
+        </div>
+        <n-form-item label="验证码">
+          <n-input
+            v-model:value="twoFAForm.code"
+            placeholder="请输入 6 位数字"
+            maxlength="8"
+            @keyup.enter="handle2FALogin"
+          />
+        </n-form-item>
+        <n-button type="primary" block :loading="loading" @click="handle2FALogin" class="login-btn">
+          验证
+        </n-button>
+        <n-button quaternary block @click="cancel2FA" style="margin-top: 8px;">
+          返回
+        </n-button>
+      </n-form>
+
       <div class="login-links">
         <router-link to="/forgot-password">忘记密码？</router-link>
         <span v-if="registrationEnabled">|</span>
@@ -44,7 +69,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useUserStore } from '../stores/user'
-import { getPublicSiteConfig, getRegistrationStatus } from '../api'
+import { getPublicSiteConfig, getRegistrationStatus, login2FA } from '../api'
 
 const router = useRouter()
 const message = useMessage()
@@ -52,9 +77,15 @@ const userStore = useUserStore()
 
 const loading = ref(false)
 const registrationEnabled = ref(false)
+const requires2FA = ref(false)
+const tempToken = ref('')
 const form = ref({
   username: '',
   password: '',
+})
+
+const twoFAForm = ref({
+  code: '',
 })
 
 const siteConfig = ref({
@@ -96,20 +127,65 @@ const loadSiteConfig = async () => {
 const handleLogin = async () => {
   loading.value = true
   try {
-    await userStore.login(form.value.username, form.value.password)
-    message.success('登录成功')
-    // 检查是否需要强制修改密码
-    if (userStore.user && !userStore.user.password_changed) {
-      message.warning('首次登录请修改默认密码')
-      router.push('/change-password?force=1')
+    const res: any = await userStore.login(form.value.username, form.value.password)
+
+    // 检查是否需要 2FA
+    if (res && res.requires_2fa) {
+      tempToken.value = res.temp_token
+      requires2FA.value = true
+      message.info('请输入双因素验证码')
     } else {
-      router.push('/')
+      message.success('登录成功')
+      // 检查是否需要强制修改密码
+      if (userStore.user && !userStore.user.password_changed) {
+        message.warning('首次登录请修改默认密码')
+        router.push('/change-password?force=1')
+      } else {
+        router.push('/')
+      }
     }
   } catch (e: any) {
     message.error(e.response?.data?.error || '登录失败')
   } finally {
     loading.value = false
   }
+}
+
+const handle2FALogin = async () => {
+  if (!twoFAForm.value.code) {
+    message.error('请输入验证码')
+    return
+  }
+
+  loading.value = true
+  try {
+    const res: any = await login2FA(tempToken.value, twoFAForm.value.code)
+
+    // 保存令牌和用户信息
+    userStore.token = res.token
+    userStore.user = res.user
+    localStorage.setItem('token', res.token)
+
+    message.success('登录成功')
+
+    // 检查是否需要强制修改密码
+    if (res.user && !res.user.password_changed) {
+      message.warning('首次登录请修改默认密码')
+      router.push('/change-password?force=1')
+    } else {
+      router.push('/')
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '验证码错误')
+  } finally {
+    loading.value = false
+  }
+}
+
+const cancel2FA = () => {
+  requires2FA.value = false
+  tempToken.value = ''
+  twoFAForm.value.code = ''
 }
 
 onMounted(() => {

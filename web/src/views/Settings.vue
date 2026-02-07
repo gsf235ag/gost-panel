@@ -54,6 +54,17 @@
           />
         </n-form-item>
 
+        <n-divider>安全设置</n-divider>
+
+        <n-form-item label="登录限流">
+          <n-space vertical>
+            <n-text>最多 5 次失败尝试 / 分钟，封锁 5 分钟</n-text>
+            <n-text depth="3" style="font-size: 12px;">
+              超过限制的 IP 将被自动封锁，并记录到操作日志中
+            </n-text>
+          </n-space>
+        </n-form-item>
+
         <n-divider>图标配置</n-divider>
 
         <n-form-item label="Favicon URL">
@@ -115,6 +126,27 @@
           <img :src="form.favicon_url || '/vite.svg'" style="width: 20px; height: 20px;" />
           <n-text strong>{{ form.site_name || 'GOST Panel' }}</n-text>
         </n-space>
+      </n-space>
+    </n-card>
+
+    <!-- 会话管理 -->
+    <n-card style="margin-top: 16px;">
+      <template #header>
+        <n-space justify="space-between" align="center">
+          <span>活跃会话</span>
+          <n-button type="warning" :loading="deletingOthers" @click="handleDeleteOtherSessions">
+            注销其他所有会话
+          </n-button>
+        </n-space>
+      </template>
+      <n-space vertical>
+        <n-text depth="3">管理您的登录会话，可以强制注销其他设备。</n-text>
+        <n-data-table
+          :columns="sessionColumns"
+          :data="sessions"
+          :loading="loadingSessions"
+          :pagination="false"
+        />
       </n-space>
     </n-card>
 
@@ -180,13 +212,30 @@
         </n-text>
       </n-space>
     </n-card>
+
+    <!-- 操作引导 -->
+    <n-card style="margin-top: 16px;">
+      <template #header>
+        <span>操作引导</span>
+      </template>
+      <n-space vertical>
+        <n-text depth="3">重新显示新手向导，帮助您快速了解系统功能。</n-text>
+        <n-button @click="handleResetGuides">
+          重置所有引导
+        </n-button>
+        <n-text depth="3" style="font-size: 12px;">
+          重置后，下次访问各页面时将重新显示操作引导
+        </n-text>
+      </n-space>
+    </n-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useMessage, useDialog } from 'naive-ui'
-import { getSiteConfigs, updateSiteConfigs, exportData, importData, backupDatabase, restoreDatabase, getAgentVersion } from '../api'
+import { ref, onMounted, h } from 'vue'
+import { useMessage, useDialog, NButton, NSpace, NTag } from 'naive-ui'
+import { getSiteConfigs, updateSiteConfigs, exportData, importData, backupDatabase, restoreDatabase, getAgentVersion, getSessions, deleteSession, deleteOtherSessions } from '../api'
+import { resetAllGuides } from '../guides'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -195,8 +244,11 @@ const exporting = ref(false)
 const importing = ref(false)
 const backingUp = ref(false)
 const restoring = ref(false)
+const loadingSessions = ref(false)
+const deletingOthers = ref(false)
 const agentVersion = ref('loading...')
 const exportType = ref<'all' | 'nodes' | 'clients'>('all')
+const sessions = ref<any[]>([])
 
 const exportTypeOptions = [
   { label: '全部', value: 'all' },
@@ -207,6 +259,62 @@ const exportTypeOptions = [
 const roleOptions = [
   { label: '普通用户', value: 'user' },
   { label: '只读用户', value: 'viewer' },
+]
+
+const sessionColumns = [
+  {
+    title: 'IP 地址',
+    key: 'ip',
+    render: (row: any) => {
+      const isCurrent = row.ip.includes('(当前)')
+      return isCurrent ? h(NSpace, { align: 'center' }, {
+        default: () => [
+          h('span', row.ip.replace(' (当前)', '')),
+          h(NTag, { type: 'success', size: 'small' }, { default: () => '当前' })
+        ]
+      }) : row.ip
+    }
+  },
+  {
+    title: '设备/浏览器',
+    key: 'user_agent',
+    render: (row: any) => {
+      const ua = row.user_agent
+      if (ua.includes('Windows')) return 'Windows'
+      if (ua.includes('Mac')) return 'macOS'
+      if (ua.includes('Linux')) return 'Linux'
+      if (ua.includes('Android')) return 'Android'
+      if (ua.includes('iPhone') || ua.includes('iPad')) return 'iOS'
+      return 'Unknown'
+    }
+  },
+  {
+    title: '创建时间',
+    key: 'created_at',
+    render: (row: any) => new Date(row.created_at).toLocaleString('zh-CN')
+  },
+  {
+    title: '最后活跃',
+    key: 'last_active',
+    render: (row: any) => new Date(row.last_active).toLocaleString('zh-CN')
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row: any) => {
+      const isCurrent = row.ip.includes('(当前)')
+      return h(
+        NButton,
+        {
+          size: 'small',
+          type: 'error',
+          disabled: isCurrent,
+          onClick: () => handleDeleteSession(row.id)
+        },
+        { default: () => '强制下线' }
+      )
+    }
+  }
 ]
 
 const form = ref({
@@ -361,9 +469,66 @@ const loadVersion = async () => {
   }
 }
 
+const handleResetGuides = () => {
+  resetAllGuides()
+  message.success('已重置所有引导，刷新页面后生效')
+}
+
+const loadSessions = async () => {
+  loadingSessions.value = true
+  try {
+    const data: any = await getSessions()
+    sessions.value = data || []
+  } catch (e) {
+    message.error('加载会话列表失败')
+  } finally {
+    loadingSessions.value = false
+  }
+}
+
+const handleDeleteSession = async (id: number) => {
+  dialog.warning({
+    title: '确认强制下线',
+    content: '确定要强制下线该会话吗？该设备将需要重新登录。',
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteSession(id)
+        message.success('会话已注销')
+        loadSessions()
+      } catch (e) {
+        message.error('注销失败')
+      }
+    }
+  })
+}
+
+const handleDeleteOtherSessions = async () => {
+  dialog.warning({
+    title: '确认注销所有其他会话',
+    content: '确定要注销除当前设备外的所有会话吗？其他设备将需要重新登录。',
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      deletingOthers.value = true
+      try {
+        const result: any = await deleteOtherSessions()
+        message.success(`已注销 ${result.count} 个会话`)
+        loadSessions()
+      } catch (e) {
+        message.error('注销失败')
+      } finally {
+        deletingOthers.value = false
+      }
+    }
+  })
+}
+
 onMounted(() => {
   loadConfigs()
   loadVersion()
+  loadSessions()
 })
 </script>
 

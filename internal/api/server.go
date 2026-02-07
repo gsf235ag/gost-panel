@@ -20,6 +20,7 @@ import (
 	"github.com/AliceNetworks/gost-panel/internal/notify"
 	"github.com/AliceNetworks/gost-panel/internal/service"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 //go:embed all:dist
@@ -32,6 +33,9 @@ type Server struct {
 	loginLimiter *RateLimiter
 	audit        *AuditLogger
 	wsHub        *WSHub
+	// API rate limiters
+	globalAPILimiter *APIRateLimiter
+	writeAPILimiter  *APIRateLimiter
 }
 
 func NewServer(svc *service.Service, cfg *config.Config) *Server {
@@ -80,13 +84,22 @@ func NewServer(svc *service.Service, cfg *config.Config) *Server {
 	SetWSOrigins(cfg.AllowedOrigins, cfg.Debug)
 
 	s := &Server{
-		svc:          svc,
-		cfg:          cfg,
-		router:       r,
-		loginLimiter: NewRateLimiter(5, time.Minute, 5*time.Minute), // 每分钟5次，封锁5分钟
-		audit:        NewAuditLogger(svc),
-		wsHub:        NewWSHub(),
+		svc:              svc,
+		cfg:              cfg,
+		router:           r,
+		loginLimiter:     NewRateLimiter(5, time.Minute, 5*time.Minute), // 每分钟5次，封锁5分钟
+		audit:            NewAuditLogger(svc),
+		wsHub:            NewWSHub(),
+		globalAPILimiter: NewAPIRateLimiter(200, time.Minute),           // 全局 API 限流: 每分钟 200 次
+		writeAPILimiter:  NewAPIRateLimiter(30, time.Minute),            // 写操作限流: 每分钟 30 次
 	}
+
+	// 设置登录限流回调，记录被封锁的 IP
+	s.loginLimiter.SetOnBlockCallback(func(ip string, attempts int) {
+		s.svc.LogOperation(0, "system", "security", "ip_block", 0,
+			fmt.Sprintf("IP blocked due to excessive login attempts: %s (%d attempts)", ip, attempts),
+			ip, "rate_limiter", "success")
+	})
 
 	// Start WebSocket hub
 	go s.wsHub.Run()
@@ -122,6 +135,7 @@ func (s *Server) setupRoutes() {
 
 		// 公开接口 (带限流)
 		api.POST("/login", RateLimitMiddleware(s.loginLimiter), s.login)
+		api.POST("/login/2fa", s.login2FA)
 		api.GET("/site-config", s.getPublicSiteConfig) // 公开的网站配置
 
 		// 用户注册和验证 (公开，带限流)
@@ -134,6 +148,7 @@ func (s *Server) setupRoutes() {
 		// 需要认证的接口
 		auth := api.Group("")
 		auth.Use(s.authMiddleware())
+		auth.Use(APIRateLimitMiddleware(s.globalAPILimiter)) // 全局 API 限流
 		{
 			// 统计
 			auth.GET("/stats", s.getStats)
@@ -141,21 +156,28 @@ func (s *Server) setupRoutes() {
 			// 全局搜索
 			auth.GET("/search", s.globalSearch)
 
-			// 节点管理
+			// 会话管理
+			auth.GET("/sessions", s.getSessions)
+			auth.DELETE("/sessions/:id", s.deleteSession)
+			auth.DELETE("/sessions/others", s.deleteOtherSessions)
+
+			// 节点管理 (写操作添加额外限流)
 			auth.GET("/nodes", s.listNodes)
 			auth.GET("/nodes/paginated", s.listNodesPaginated)
-			auth.POST("/nodes", s.createNode)
+			auth.POST("/nodes", APIRateLimitMiddleware(s.writeAPILimiter), s.createNode)
 			auth.GET("/nodes/:id", s.getNode)
-			auth.PUT("/nodes/:id", s.updateNode)
-			auth.DELETE("/nodes/:id", s.deleteNode)
-			auth.POST("/nodes/:id/apply", s.applyNodeConfig)
-			auth.POST("/nodes/:id/clone", s.cloneNode)
-			auth.POST("/nodes/:id/sync", s.syncNodeConfig)
+			auth.PUT("/nodes/:id", APIRateLimitMiddleware(s.writeAPILimiter), s.updateNode)
+			auth.DELETE("/nodes/:id", APIRateLimitMiddleware(s.writeAPILimiter), s.deleteNode)
+			auth.POST("/nodes/:id/apply", APIRateLimitMiddleware(s.writeAPILimiter), s.applyNodeConfig)
+			auth.POST("/nodes/:id/clone", APIRateLimitMiddleware(s.writeAPILimiter), s.cloneNode)
+			auth.POST("/nodes/:id/sync", APIRateLimitMiddleware(s.writeAPILimiter), s.syncNodeConfig)
 			auth.GET("/nodes/:id/gost-config", s.getNodeGostConfig)
 			auth.GET("/nodes/:id/proxy-uri", s.getNodeProxyURI)
 			auth.GET("/nodes/:id/install-script", s.getNodeInstallScript)
 			auth.GET("/nodes/:id/ping", s.pingNode)
 			auth.GET("/nodes/ping", s.pingAllNodes)
+			auth.GET("/nodes/:id/health-logs", s.getNodeHealthLogs)
+			auth.GET("/health-summary", s.getHealthSummary)
 
 			// 节点配置版本历史
 			auth.GET("/nodes/:id/config-versions", s.getConfigVersions)
@@ -165,6 +187,8 @@ func (s *Server) setupRoutes() {
 			auth.DELETE("/config-versions/:versionId", s.deleteConfigVersion)
 
 			// 节点批量操作
+			auth.POST("/nodes/batch-enable", s.batchEnableNodes)
+			auth.POST("/nodes/batch-disable", s.batchDisableNodes)
 			auth.POST("/nodes/batch-delete", s.batchDeleteNodes)
 			auth.POST("/nodes/batch-sync", s.batchSyncNodes)
 
@@ -181,7 +205,10 @@ func (s *Server) setupRoutes() {
 			auth.POST("/clients/:id/clone", s.cloneClient)
 
 			// 客户端批量操作
+			auth.POST("/clients/batch-enable", s.batchEnableClients)
+			auth.POST("/clients/batch-disable", s.batchDisableClients)
 			auth.POST("/clients/batch-delete", s.batchDeleteClients)
+			auth.POST("/clients/batch-sync", s.batchSyncClients)
 
 			// 用户管理
 			auth.GET("/users", s.listUsers)
@@ -194,6 +221,11 @@ func (s *Server) setupRoutes() {
 			// 个人账户设置
 			auth.GET("/profile", s.getProfile)
 			auth.PUT("/profile", s.updateProfile)
+
+			// 2FA 双因素认证
+			auth.POST("/profile/2fa/enable", s.enable2FA)
+			auth.POST("/profile/2fa/verify", s.verify2FA)
+			auth.POST("/profile/2fa/disable", s.disable2FA)
 
 			// 流量历史
 			auth.GET("/traffic-history", s.getTrafficHistory)
@@ -491,9 +523,23 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 
 		claims := token.Claims.(jwt.MapClaims)
+
+		// 验证 JTI (会话管理)
+		if jti, ok := claims["jti"].(string); ok && jti != "" {
+			// 检查会话是否存在且有效
+			if !s.svc.ValidateSession(jti) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "session expired or invalid"})
+				c.Abort()
+				return
+			}
+			// 每5分钟更新一次 last_active 时间（减少数据库写入）
+			go s.svc.UpdateSessionActivity(jti)
+		}
+
 		c.Set("user_id", claims["user_id"])
 		c.Set("username", claims["username"])
 		c.Set("role", claims["role"])
+		c.Set("jti", claims["jti"])
 		c.Next()
 	}
 }
@@ -534,6 +580,29 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 
+	// 检查是否启用了 2FA
+	if user.TwoFactorEnabled {
+		// 生成临时令牌（5分钟有效）
+		tempToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"user_id":  user.ID,
+			"username": user.Username,
+			"temp_2fa": true,
+			"exp":      time.Now().Add(5 * time.Minute).Unix(),
+		})
+
+		tempTokenString, err := tempToken.SignedString([]byte(s.cfg.JWTSecret))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate temp token"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"requires_2fa": true,
+			"temp_token":   tempTokenString,
+		})
+		return
+	}
+
 	// 登录成功，重置限流计数
 	s.loginLimiter.Reset(c.ClientIP())
 	RecordLoginAttempt(true)
@@ -544,12 +613,15 @@ func (s *Server) login(c *gin.Context) {
 	// 记录登录成功
 	s.svc.LogOperation(user.ID, user.Username, "login", "user", user.ID, "login success", c.ClientIP(), c.GetHeader("User-Agent"), "success")
 
-	// 生成 JWT
+	// 生成 JWT with JTI
+	jti := uuid.New().String()
+	expiresAt := time.Now().Add(24 * time.Hour)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
 		"role":     user.Role,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"jti":      jti,
+		"exp":      expiresAt.Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte(s.cfg.JWTSecret))
@@ -558,15 +630,26 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 
+	// 创建会话记录
+	if err := s.svc.CreateUserSession(user.ID, jti, c.ClientIP(), c.GetHeader("User-Agent"), expiresAt); err != nil {
+		// 会话创建失败不影响登录，只记录错误
+		s.svc.LogOperation(user.ID, user.Username, "session_create", "user_session", 0, fmt.Sprintf("failed to create session: %v", err), c.ClientIP(), c.GetHeader("User-Agent"), "failed")
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"token": tokenString,
 		"user": gin.H{
-			"id":               user.ID,
-			"username":         user.Username,
-			"email":            user.Email,
-			"role":             user.Role,
-			"email_verified":   user.EmailVerified,
-			"password_changed": user.PasswordChanged,
+			"id":                user.ID,
+			"username":          user.Username,
+			"email":             user.Email,
+			"role":              user.Role,
+			"email_verified":    user.EmailVerified,
+			"password_changed":  user.PasswordChanged,
+			"plan":              user.Plan,
+			"plan_id":           user.PlanID,
+			"plan_start_at":     user.PlanStartAt,
+			"plan_expire_at":    user.PlanExpireAt,
+			"plan_traffic_used": user.PlanTrafficUsed,
 		},
 	})
 }

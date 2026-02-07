@@ -50,6 +50,13 @@
         </div>
         <div class="header-actions">
           <GlobalSearch v-if="!isMobile" />
+          <n-dropdown :options="localeMenuOptions" @select="handleLocaleChange">
+            <n-button quaternary circle>
+              <template #icon>
+                <n-icon><globe-outline /></n-icon>
+              </template>
+            </n-button>
+          </n-dropdown>
           <n-button quaternary circle @click="themeStore.toggle">
             <template #icon>
               <n-icon>
@@ -71,40 +78,40 @@
     </n-layout>
 
     <!-- Change Password Modal -->
-    <n-modal v-model:show="showPasswordModal" preset="dialog" title="修改密码">
+    <n-modal v-model:show="showPasswordModal" preset="dialog" :title="t('auth.changePassword')">
       <n-form :model="passwordForm" label-placement="left" label-width="100">
-        <n-form-item label="当前密码">
-          <n-input v-model:value="passwordForm.old_password" type="password" placeholder="请输入当前密码" />
+        <n-form-item :label="t('auth.oldPassword')">
+          <n-input v-model:value="passwordForm.old_password" type="password" :placeholder="t('auth.oldPassword')" />
         </n-form-item>
-        <n-form-item label="新密码">
-          <n-input v-model:value="passwordForm.new_password" type="password" placeholder="请输入新密码" />
+        <n-form-item :label="t('auth.newPassword')">
+          <n-input v-model:value="passwordForm.new_password" type="password" :placeholder="t('auth.newPassword')" />
         </n-form-item>
-        <n-form-item label="确认密码">
-          <n-input v-model:value="passwordForm.confirm_password" type="password" placeholder="请再次输入新密码" />
+        <n-form-item :label="t('auth.confirmPassword')">
+          <n-input v-model:value="passwordForm.confirm_password" type="password" :placeholder="t('auth.confirmPassword')" />
         </n-form-item>
       </n-form>
       <template #action>
         <n-space>
-          <n-button @click="showPasswordModal = false">取消</n-button>
-          <n-button type="primary" :loading="changingPassword" @click="handleChangePassword">确定</n-button>
+          <n-button @click="showPasswordModal = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="changingPassword" @click="handleChangePassword">{{ t('common.confirm') }}</n-button>
         </n-space>
       </template>
     </n-modal>
 
     <!-- Account Settings Modal -->
-    <n-modal v-model:show="showAccountModal" preset="dialog" title="账户设置" style="width: 500px;">
+    <n-modal v-model:show="showAccountModal" preset="dialog" :title="t('auth.accountSettings')" style="width: 500px;">
       <n-form :model="profileForm" label-placement="left" label-width="100">
-        <n-form-item label="用户名">
+        <n-form-item :label="t('auth.username')">
           <n-input :value="userStore.user?.username" disabled />
         </n-form-item>
-        <n-form-item label="邮箱">
+        <n-form-item :label="t('auth.email')">
           <n-input v-model:value="profileForm.email" placeholder="user@example.com" />
         </n-form-item>
       </n-form>
       <template #action>
         <n-space>
-          <n-button @click="showAccountModal = false">取消</n-button>
-          <n-button type="primary" :loading="savingProfile" @click="handleSaveProfile">保存</n-button>
+          <n-button @click="showAccountModal = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="savingProfile" @click="handleSaveProfile">{{ t('common.save') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -133,13 +140,16 @@ import {
   MenuOutline,
   CardOutline,
   ShieldCheckmarkOutline,
+  GlobeOutline,
 } from '@vicons/ionicons5'
 import { useUserStore } from '../stores/user'
 import { useThemeStore } from '../stores/theme'
 import { changePassword, getPublicSiteConfig, getProfile, updateProfile, getHealthInfo } from '../api'
 import GlobalSearch from '../components/GlobalSearch.vue'
 import { useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 
+const { t, locale } = useI18n()
 const message = useMessage()
 const router = useRouter()
 const route = useRoute()
@@ -181,92 +191,111 @@ const profileForm = ref({
 
 const renderIcon = (icon: any) => () => h(NIcon, null, { default: () => h(icon) })
 
-const menuOptions = [
-  {
-    label: '仪表盘',
-    key: 'dashboard',
-    icon: renderIcon(HomeOutline),
-  },
-  {
-    label: '客户端',
-    key: 'clients',
-    icon: renderIcon(DesktopOutline),
-  },
-  {
-    label: '节点管理',
-    key: 'nodes',
-    icon: renderIcon(ServerOutline),
-  },
-  {
-    label: '端口转发',
-    key: 'port-forwards',
-    icon: renderIcon(SwapHorizontalOutline),
-  },
-  {
-    label: '负载均衡',
-    key: 'node-groups',
-    icon: renderIcon(GitNetworkOutline),
-  },
-  {
-    label: '隧道转发',
-    key: 'tunnels',
-    icon: renderIcon(LinkOutline),
-  },
-  {
-    label: '规则管理',
-    key: 'rules',
-    icon: renderIcon(ShieldCheckmarkOutline),
-  },
-  {
-    label: '用户管理',
-    key: 'users',
-    icon: renderIcon(PeopleOutline),
-  },
-  {
-    label: '告警通知',
-    key: 'notify',
-    icon: renderIcon(NotificationsOutline),
-  },
-  {
-    label: '操作日志',
-    key: 'operation-logs',
-    icon: renderIcon(ListOutline),
-  },
-  {
-    label: '套餐管理',
-    key: 'plans',
-    icon: renderIcon(CardOutline),
-  },
-  {
-    label: '网站设置',
-    key: 'settings',
-    icon: renderIcon(SettingsOutline),
-  },
-]
+const localeMenuOptions = computed(() => [
+  { label: '中文', key: 'zh-CN' },
+  { label: 'English', key: 'en' },
+])
 
-const userOptions = [
+const handleLocaleChange = (key: string) => {
+  locale.value = key
+  localStorage.setItem('locale', key)
+}
+
+const menuOptions = computed(() => {
+  const baseItems = [
+    {
+      label: t('menu.dashboard'),
+      key: 'dashboard',
+      icon: renderIcon(HomeOutline),
+    },
+    {
+      label: t('menu.clients'),
+      key: 'clients',
+      icon: renderIcon(DesktopOutline),
+    },
+    {
+      label: t('menu.nodes'),
+      key: 'nodes',
+      icon: renderIcon(ServerOutline),
+    },
+    {
+      label: t('menu.portForwards'),
+      key: 'port-forwards',
+      icon: renderIcon(SwapHorizontalOutline),
+    },
+    {
+      label: t('menu.nodeGroups'),
+      key: 'node-groups',
+      icon: renderIcon(GitNetworkOutline),
+    },
+    {
+      label: t('menu.tunnels'),
+      key: 'tunnels',
+      icon: renderIcon(LinkOutline),
+    },
+  ]
+
+  if (userStore.user?.role === 'admin') {
+    baseItems.push(
+      {
+        label: t('menu.rules'),
+        key: 'rules',
+        icon: renderIcon(ShieldCheckmarkOutline),
+      },
+      {
+        label: t('menu.users'),
+        key: 'users',
+        icon: renderIcon(PeopleOutline),
+      },
+      {
+        label: t('menu.notify'),
+        key: 'notify',
+        icon: renderIcon(NotificationsOutline),
+      },
+      {
+        label: t('menu.operationLogs'),
+        key: 'operation-logs',
+        icon: renderIcon(ListOutline),
+      },
+      {
+        label: t('menu.plans'),
+        key: 'plans',
+        icon: renderIcon(CardOutline),
+      },
+      {
+        label: t('menu.settings'),
+        key: 'settings',
+        icon: renderIcon(SettingsOutline),
+      }
+    )
+  }
+
+  return baseItems
+})
+
+const userOptions = computed(() => [
   {
-    label: '账户设置',
+    label: t('auth.accountSettings'),
     key: 'account-settings',
     icon: renderIcon(SettingsOutline),
   },
   {
-    label: '修改密码',
+    label: t('auth.changePassword'),
     key: 'change-password',
     icon: renderIcon(KeyOutline),
   },
   {
-    label: '退出登录',
+    label: t('auth.logout'),
     key: 'logout',
     icon: renderIcon(LogOutOutline),
   },
-]
+])
 
 const currentMenu = computed(() => route.name as string)
 
 const currentTitle = computed(() => {
-  const menu = menuOptions.find((m) => m.key === currentMenu.value)
-  return menu?.label || '仪表盘'
+  const menu = menuOptions.value.find((m) => m.key === currentMenu.value)
+  return menu?.label || t('menu.dashboard')
 })
 
 const handleMenuSelect = (key: string) => {
@@ -311,7 +340,7 @@ const loadProfile = async () => {
       email: user.email || '',
     }
   } catch {
-    message.error('加载用户信息失败')
+    message.error(t('auth.loadProfileFailed'))
   }
 }
 
@@ -319,10 +348,10 @@ const handleSaveProfile = async () => {
   savingProfile.value = true
   try {
     await updateProfile({ email: profileForm.value.email })
-    message.success('账户信息已更新')
+    message.success(t('auth.accountUpdated'))
     showAccountModal.value = false
   } catch (e: any) {
-    message.error(e.response?.data?.error || '保存失败')
+    message.error(e.response?.data?.error || t('auth.saveFailed'))
   } finally {
     savingProfile.value = false
   }
@@ -330,18 +359,18 @@ const handleSaveProfile = async () => {
 
 const handleChangePassword = async () => {
   if (passwordForm.value.new_password !== passwordForm.value.confirm_password) {
-    message.error('两次输入的密码不一致')
+    message.error(t('auth.passwordMismatch'))
     return
   }
 
   changingPassword.value = true
   try {
     await changePassword(passwordForm.value.old_password, passwordForm.value.new_password)
-    message.success('密码修改成功')
+    message.success(t('auth.passwordChanged'))
     showPasswordModal.value = false
     passwordForm.value = { old_password: '', new_password: '', confirm_password: '' }
   } catch (e: any) {
-    message.error(e.response?.data?.error || '密码修改失败')
+    message.error(e.response?.data?.error || t('auth.loginFailed'))
   } finally {
     changingPassword.value = false
   }

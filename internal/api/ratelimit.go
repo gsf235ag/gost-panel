@@ -16,6 +16,8 @@ type RateLimiter struct {
 	maxAttempts int           // 最大尝试次数
 	window      time.Duration // 时间窗口
 	blockTime   time.Duration // 封锁时间
+	// 回调函数（IP 被封锁时调用）
+	onBlock func(ip string, attempts int)
 }
 
 type attemptInfo struct {
@@ -79,6 +81,10 @@ func (rl *RateLimiter) Allow(key string) bool {
 	if info.count > rl.maxAttempts {
 		info.blocked = true
 		info.blockTime = now
+		// 触发封锁回调
+		if rl.onBlock != nil {
+			go rl.onBlock(key, info.count)
+		}
 		return false
 	}
 
@@ -127,6 +133,13 @@ func (rl *RateLimiter) cleanup() {
 		}
 		rl.mu.Unlock()
 	}
+}
+
+// SetOnBlockCallback 设置 IP 被封锁时的回调函数
+func (rl *RateLimiter) SetOnBlockCallback(callback func(ip string, attempts int)) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.onBlock = callback
 }
 
 // RateLimitMiddleware 限流中间件

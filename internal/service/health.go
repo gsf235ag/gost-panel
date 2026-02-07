@@ -97,30 +97,50 @@ func (h *HealthChecker) checkClientTimeout() {
 }
 
 func (h *HealthChecker) checkNode(node model.Node) {
+	start := time.Now()
 	client := gost.NewClient(node.Host, node.APIPort, node.APIUser, node.APIPass)
 
 	err := client.Ping()
-	newStatus := "online"
+	latency := int(time.Since(start).Milliseconds())
+
+	status := "healthy"
+	errMsg := ""
+	newNodeStatus := "online"
+
 	if err != nil {
-		newStatus = "offline"
+		status = "unhealthy"
+		errMsg = err.Error()
+		newNodeStatus = "offline"
 	}
 
+	// 记录健康检查日志
+	h.db.Create(&model.HealthCheckLog{
+		NodeID:    node.ID,
+		Status:    status,
+		Latency:   latency,
+		ErrorMsg:  errMsg,
+		CheckedAt: time.Now(),
+	})
+
 	// 状态变更
-	if node.Status != newStatus {
-		log.Printf("Health check: node %s status changed: %s -> %s", node.Name, node.Status, newStatus)
+	if node.Status != newNodeStatus {
+		log.Printf("Health check: node %s status changed: %s -> %s", node.Name, node.Status, newNodeStatus)
 
 		// 更新数据库状态
 		h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
-			"status":    newStatus,
+			"status":    newNodeStatus,
 			"last_seen": time.Now(),
 		})
 
 		// 触发告警
-		if newStatus == "offline" && h.alertService != nil {
+		if newNodeStatus == "offline" && h.alertService != nil {
 			h.alertService.TriggerAlert("node_offline", "node", node.ID, node.Name, "Node is offline")
 		}
-	} else if newStatus == "online" {
+	} else if newNodeStatus == "online" {
 		// 在线时更新 last_seen
 		h.db.Model(&model.Node{}).Where("id = ?", node.ID).Update("last_seen", time.Now())
 	}
+
+	// 清理旧日志（保留7天）
+	h.db.Where("node_id = ? AND checked_at < ?", node.ID, time.Now().AddDate(0, 0, -7)).Delete(&model.HealthCheckLog{})
 }

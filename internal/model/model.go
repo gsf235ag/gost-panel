@@ -249,6 +249,10 @@ type User struct {
 	ResetTokenExpiry  *time.Time `json:"-"`                                   // 重置令牌过期时间
 	LastLoginAt       *time.Time `json:"last_login_at,omitempty"`             // 上次登录时间
 	LastLoginIP       string     `gorm:"size:50" json:"last_login_ip,omitempty"` // 上次登录 IP
+	// 2FA 双因素认证
+	TwoFactorEnabled bool   `gorm:"default:false" json:"two_factor_enabled"`
+	TwoFactorSecret  string `gorm:"size:100" json:"-"`
+	BackupCodes      string `gorm:"type:text" json:"-"` // JSON array of hashed codes
 	// 用户套餐
 	PlanID         *uint      `gorm:"index" json:"plan_id,omitempty"`        // 当前套餐ID
 	Plan           *Plan      `gorm:"foreignKey:PlanID" json:"plan,omitempty"`
@@ -263,6 +267,18 @@ type User struct {
 	QuotaExceeded  bool      `gorm:"default:false" json:"quota_exceeded"`  // 是否超限
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+// UserSession 用户会话
+type UserSession struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"index" json:"user_id"`
+	TokenJTI   string    `gorm:"size:64;uniqueIndex" json:"-"`
+	IP         string    `gorm:"size:45" json:"ip"`
+	UserAgent  string    `gorm:"size:500" json:"user_agent"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	LastActive time.Time `json:"last_active"`
 }
 
 // Plan 套餐
@@ -471,6 +487,16 @@ type ConfigVersion struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// HealthCheckLog 健康检查日志
+type HealthCheckLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	NodeID    uint      `gorm:"index" json:"node_id"`
+	Status    string    `gorm:"size:20" json:"status"`     // healthy, unhealthy
+	Latency   int       `json:"latency"`                   // ms
+	ErrorMsg  string    `gorm:"size:500" json:"error_msg"`
+	CheckedAt time.Time `gorm:"index" json:"checked_at"`
+}
+
 // SiteConfig 网站配置
 type SiteConfig struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
@@ -495,9 +521,20 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 	}
 
 	// 自动迁移
-	if err := db.AutoMigrate(&Node{}, &Client{}, &Service{}, &User{}, &Plan{}, &PlanResource{}, &TrafficHistory{}, &NotifyChannel{}, &AlertRule{}, &AlertLog{}, &PortForward{}, &NodeGroup{}, &NodeGroupMember{}, &DNSConfig{}, &OperationLog{}, &ProxyChain{}, &ProxyChainHop{}, &Tunnel{}, &SiteConfig{}, &Tag{}, &NodeTag{}, &Bypass{}, &Admission{}, &HostMapping{}, &Ingress{}, &Recorder{}, &Router{}, &SD{}, &ConfigVersion{}); err != nil {
+	if err := db.AutoMigrate(&Node{}, &Client{}, &Service{}, &User{}, &UserSession{}, &Plan{}, &PlanResource{}, &TrafficHistory{}, &NotifyChannel{}, &AlertRule{}, &AlertLog{}, &PortForward{}, &NodeGroup{}, &NodeGroupMember{}, &DNSConfig{}, &OperationLog{}, &ProxyChain{}, &ProxyChainHop{}, &Tunnel{}, &SiteConfig{}, &Tag{}, &NodeTag{}, &Bypass{}, &Admission{}, &HostMapping{}, &Ingress{}, &Recorder{}, &Router{}, &SD{}, &ConfigVersion{}, &HealthCheckLog{}); err != nil {
 		return nil, err
 	}
+
+	// 创建索引优化查询性能
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_nodes_owner_status ON nodes(owner_id, status)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_clients_node_status ON clients(node_id, status)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_operation_logs_user_time ON operation_logs(user_id, created_at)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_traffic_histories_node_time ON traffic_histories(node_id, recorded_at)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_config_versions_node ON config_versions(node_id, created_at)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_plan_resources_plan ON plan_resources(plan_id, resource_type)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_port_forwards_node ON port_forwards(node_id, enabled)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_tunnels_entry_exit ON tunnels(entry_node_id, exit_node_id)")
 
 	// 创建默认管理员
 	var count int64

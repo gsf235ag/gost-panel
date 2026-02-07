@@ -12,6 +12,12 @@
           <n-space>
             <!-- 批量操作按钮 -->
             <template v-if="selectedRowKeys.length > 0">
+              <n-button @click="handleBatchEnable" :loading="batchLoading">
+                批量启用
+              </n-button>
+              <n-button @click="handleBatchDisable" :loading="batchLoading">
+                批量禁用
+              </n-button>
               <n-button type="warning" @click="handleBatchSync" :loading="batchLoading">
                 批量同步
               </n-button>
@@ -33,7 +39,7 @@
             <n-button @click="openTemplateModal">
               快速配置
             </n-button>
-            <n-button type="primary" @click="openCreateModal">
+            <n-button type="primary" @click="openCreateModal" id="create-node-btn">
               添加节点
             </n-button>
           </n-space>
@@ -463,16 +469,51 @@
         <n-button @click="copyVersionConfig">复制</n-button>
       </template>
     </n-modal>
+
+    <!-- Health Logs Modal -->
+    <n-modal v-model:show="showHealthLogsModal" preset="dialog" :title="`健康检查日志: ${editingNode?.name}`" style="width: 800px;">
+      <n-space vertical size="large">
+        <n-text depth="3">最近 50 条健康检查记录</n-text>
+
+        <n-spin :show="healthLogsLoading">
+          <n-list bordered v-if="healthLogs.length > 0">
+            <n-list-item v-for="log in healthLogs" :key="log.id">
+              <n-space vertical size="small" style="width: 100%">
+                <n-space justify="space-between" align="center">
+                  <n-space align="center">
+                    <n-tag :type="log.status === 'healthy' ? 'success' : 'error'" size="small">
+                      {{ log.status === 'healthy' ? '正常' : '异常' }}
+                    </n-tag>
+                    <n-text>{{ formatHealthLogTime(log.checked_at) }}</n-text>
+                  </n-space>
+                  <n-tag v-if="log.latency > 0" :type="log.latency < 100 ? 'success' : log.latency < 300 ? 'warning' : 'error'" size="small">
+                    {{ log.latency }}ms
+                  </n-tag>
+                </n-space>
+                <n-text depth="3" v-if="log.error_msg" style="font-size: 12px; color: #ef4444;">
+                  错误: {{ log.error_msg }}
+                </n-text>
+              </n-space>
+            </n-list-item>
+          </n-list>
+          <n-empty v-else description="暂无健康检查记录" />
+        </n-spin>
+      </n-space>
+      <template #action>
+        <n-button @click="showHealthLogsModal = false">关闭</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
+import { ref, h, onMounted, computed, nextTick } from 'vue'
 import { NButton, NSpace, NTag, NProgress, NCollapse, NCollapseItem, NInputGroup, NText, NDivider, NTabs, NTabPane, NDropdown, NList, NListItem, NEmpty, NSpin, useMessage, useDialog } from 'naive-ui'
-import { getNodesPaginated, createNode, updateNode, deleteNode, cloneNode, getNodeGostConfig, syncNodeConfig, getNodeProxyURI, getTemplates, getTemplateCategories, getNodeInstallScript, getTags, createTag, deleteTag, getNodeTags, setNodeTags, batchDeleteNodes, batchSyncNodes, pingNode, pingAllNodes, getConfigVersions, createConfigVersion, getConfigVersion, restoreConfigVersion, deleteConfigVersion } from '../api'
+import { getNodesPaginated, createNode, updateNode, deleteNode, cloneNode, getNodeGostConfig, syncNodeConfig, getNodeProxyURI, getTemplates, getTemplateCategories, getNodeInstallScript, getTags, createTag, deleteTag, getNodeTags, setNodeTags, batchEnableNodes, batchDisableNodes, batchDeleteNodes, batchSyncNodes, pingNode, pingAllNodes, getConfigVersions, createConfigVersion, getConfigVersion, restoreConfigVersion, deleteConfigVersion, getNodeHealthLogs } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import { useKeyboard } from '../composables/useKeyboard'
+import { nodeGuide, shouldShowGuide, markGuideComplete } from '../guides'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -517,6 +558,12 @@ const versionComment = ref('')
 const showVersionCommentModal = ref(false)
 const showVersionConfigModal = ref(false)
 const currentVersionConfig = ref('')
+
+// 健康检查日志
+const showHealthLogsModal = ref(false)
+const healthLogs = ref<any[]>([])
+const healthLogsLoading = ref(false)
+const currentHealthNodeId = ref<number | null>(null)
 
 // 模板相关
 const templates = ref<any[]>([])
@@ -741,6 +788,7 @@ const columns = [
       const dropdownOptions = [
         { label: '克隆节点', key: 'clone' },
         { label: '配置历史', key: 'versions' },
+        { label: '健康日志', key: 'health' },
         { label: '安装脚本', key: 'install' },
         { label: '复制 URI', key: 'copy' },
         { label: '同步配置', key: 'sync' },
@@ -754,6 +802,7 @@ const columns = [
         switch (key) {
           case 'clone': handleCloneNode(row); break
           case 'versions': openVersionsModal(row); break
+          case 'health': openHealthLogsModal(row); break
           case 'install': handleShowScript(row); break
           case 'copy': handleCopyURI(row); break
           case 'sync': handleSyncConfig(row); break
@@ -785,6 +834,15 @@ const loadNodes = async () => {
     })
     nodes.value = data.items || []
     pagination.value.itemCount = data.total || 0
+
+    // 首次且无节点时显示引导
+    if (nodes.value.length === 0 && !searchText.value && shouldShowGuide('nodes')) {
+      await nextTick()
+      setTimeout(() => {
+        nodeGuide()
+        markGuideComplete('nodes')
+      }, 500)
+    }
   } catch (e) {
     message.error('加载节点失败')
   } finally {
@@ -1182,6 +1240,38 @@ const handleBatchSync = async () => {
   }
 }
 
+const handleBatchEnable = async () => {
+  if (selectedRowKeys.value.length === 0) return
+
+  batchLoading.value = true
+  try {
+    const result: any = await batchEnableNodes(selectedRowKeys.value)
+    message.success(result.message || `成功启用 ${result.success} 个节点`)
+    selectedRowKeys.value = []
+    await loadNodes()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '批量启用失败')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+const handleBatchDisable = async () => {
+  if (selectedRowKeys.value.length === 0) return
+
+  batchLoading.value = true
+  try {
+    const result: any = await batchDisableNodes(selectedRowKeys.value)
+    message.success(result.message || `成功禁用 ${result.success} 个节点`)
+    selectedRowKeys.value = []
+    await loadNodes()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '批量禁用失败')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
 // ==================== 配置版本历史 ====================
 
 const formatTime = (time: string) => {
@@ -1276,6 +1366,38 @@ const handleDeleteVersion = (version: any) => {
         message.error(e.response?.data?.error || '删除快照失败')
       }
     },
+  })
+}
+
+// ==================== 健康检查日志 ====================
+
+const openHealthLogsModal = async (node: any) => {
+  currentHealthNodeId.value = node.id
+  editingNode.value = node
+  showHealthLogsModal.value = true
+  await loadHealthLogs(node.id)
+}
+
+const loadHealthLogs = async (nodeId: number) => {
+  healthLogsLoading.value = true
+  try {
+    const data: any = await getNodeHealthLogs(nodeId, 50)
+    healthLogs.value = data.logs || []
+  } catch (e) {
+    message.error('加载健康日志失败')
+  } finally {
+    healthLogsLoading.value = false
+  }
+}
+
+const formatHealthLogTime = (timestamp: string) => {
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   })
 }
 

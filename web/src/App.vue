@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider :theme="currentTheme" :theme-overrides="currentThemeOverrides">
+  <n-config-provider :theme="currentTheme" :theme-overrides="currentThemeOverrides" :locale="naiveLocale" :date-locale="naiveDateLocale">
     <n-message-provider>
       <n-dialog-provider>
         <!-- Background Orbs for Glassmorphism effect (dark mode only) -->
@@ -13,10 +13,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import { darkTheme, type GlobalThemeOverrides, zhCN, enUS, dateZhCN, dateEnUS } from 'naive-ui'
 import { useThemeStore } from './stores/theme'
+import { useI18n } from 'vue-i18n'
 
 const themeStore = useThemeStore()
+const { locale } = useI18n()
+
+// Naive UI locale
+const naiveLocale = computed(() => locale.value === 'zh-CN' ? zhCN : enUS)
+const naiveDateLocale = computed(() => locale.value === 'zh-CN' ? dateZhCN : dateEnUS)
 
 // 根据主题状态选择主题
 const currentTheme = computed(() => themeStore.isDark ? darkTheme : null)

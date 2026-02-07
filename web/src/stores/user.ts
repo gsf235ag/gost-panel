@@ -9,6 +9,12 @@ export const useUserStore = defineStore('user', () => {
 
   const login = async (username: string, password: string) => {
     const res = await apiLogin(username, password)
+
+    // 检查是否需要 2FA
+    if (res.requires_2fa) {
+      return res // 返回 temp_token，由 Login.vue 处理
+    }
+
     token.value = res.token
     user.value = res.user
     localStorage.setItem('token', res.token)

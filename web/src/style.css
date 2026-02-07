@@ -438,3 +438,48 @@ body {
     padding: 8px 6px !important;
   }
 }
+
+/* ==================== driver.js 暗色模式适配 ==================== */
+
+/* 暗色模式下的 driver.js 样式 */
+html.dark .driver-popover {
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+html.dark .driver-popover .driver-popover-title {
+  color: #cdd6f4;
+}
+
+html.dark .driver-popover .driver-popover-description {
+  color: #a6adc8;
+}
+
+html.dark .driver-popover-arrow-side-left.driver-popover-arrow,
+html.dark .driver-popover-arrow-side-right.driver-popover-arrow,
+html.dark .driver-popover-arrow-side-top.driver-popover-arrow,
+html.dark .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-color: #1e1e2e;
+}
+
+/* 亮色模式下的 driver.js 样式 */
+html:not(.dark) .driver-popover {
+  background: #ffffff;
+  color: #2c3e50;
+}
+
+html:not(.dark) .driver-popover .driver-popover-title {
+  color: #2c3e50;
+}
+
+html:not(.dark) .driver-popover .driver-popover-description {
+  color: #4a5568;
+}
+
+html:not(.dark) .driver-popover-arrow-side-left.driver-popover-arrow,
+html:not(.dark) .driver-popover-arrow-side-right.driver-popover-arrow,
+html:not(.dark) .driver-popover-arrow-side-top.driver-popover-arrow,
+html:not(.dark) .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-color: #ffffff;
+}
+

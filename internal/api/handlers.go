@@ -324,6 +324,48 @@ func (s *Server) batchSyncNodes(c *gin.Context) {
 	})
 }
 
+// batchEnableNodes 批量启用节点
+func (s *Server) batchEnableNodes(c *gin.Context) {
+	var req BatchOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no nodes selected"})
+		return
+	}
+
+	result := s.svc.DB().Model(&model.Node{}).Where("id IN ?", req.IDs).Update("status", "online")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": result.RowsAffected,
+		"message": fmt.Sprintf("成功启用 %d 个节点", result.RowsAffected),
+	})
+}
+
+// batchDisableNodes 批量禁用节点
+func (s *Server) batchDisableNodes(c *gin.Context) {
+	var req BatchOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no nodes selected"})
+		return
+	}
+
+	result := s.svc.DB().Model(&model.Node{}).Where("id IN ?", req.IDs).Update("status", "offline")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": result.RowsAffected,
+		"message": fmt.Sprintf("成功禁用 %d 个节点", result.RowsAffected),
+	})
+}
+
 // batchDeleteClients 批量删除客户端
 func (s *Server) batchDeleteClients(c *gin.Context) {
 	var req BatchOperationRequest
@@ -351,6 +393,87 @@ func (s *Server) batchDeleteClients(c *gin.Context) {
 		"success": successCount,
 		"failed":  failCount,
 		"message": fmt.Sprintf("成功删除 %d 个客户端，失败 %d 个", successCount, failCount),
+	})
+}
+
+// batchEnableClients 批量启用客户端
+func (s *Server) batchEnableClients(c *gin.Context) {
+	var req BatchOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no clients selected"})
+		return
+	}
+
+	result := s.svc.DB().Model(&model.Client{}).Where("id IN ?", req.IDs).Update("status", "connected")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": result.RowsAffected,
+		"message": fmt.Sprintf("成功启用 %d 个客户端", result.RowsAffected),
+	})
+}
+
+// batchDisableClients 批量禁用客户端
+func (s *Server) batchDisableClients(c *gin.Context) {
+	var req BatchOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no clients selected"})
+		return
+	}
+
+	result := s.svc.DB().Model(&model.Client{}).Where("id IN ?", req.IDs).Update("status", "disconnected")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": result.RowsAffected,
+		"message": fmt.Sprintf("成功禁用 %d 个客户端", result.RowsAffected),
+	})
+}
+
+// batchSyncClients 批量同步客户端配置
+func (s *Server) batchSyncClients(c *gin.Context) {
+	var req BatchOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no clients selected"})
+		return
+	}
+
+	successCount := 0
+	failCount := 0
+	offlineCount := 0
+	for _, id := range req.IDs {
+		client, err := s.svc.GetClient(id)
+		if err != nil {
+			failCount++
+			continue
+		}
+		if client.Status != "connected" {
+			offlineCount++
+			continue
+		}
+		// 标记客户端需要重新加载配置
+		s.svc.DB().Model(&model.Client{}).Where("id = ?", id).Update("updated_at", time.Now())
+		successCount++
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": successCount,
+		"offline": offlineCount,
+		"failed":  failCount,
+		"message": fmt.Sprintf("成功同步 %d 个客户端，%d 个离线，%d 个失败", successCount, offlineCount, failCount),
 	})
 }
 
@@ -1508,6 +1631,153 @@ func (s *Server) updateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
+// ==================== 2FA 双因素认证 ====================
+
+// enable2FA 开始启用 2FA
+func (s *Server) enable2FA(c *gin.Context) {
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userIDFloat, ok := userIDRaw.(float64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user id"})
+		return
+	}
+	userID := uint(userIDFloat)
+
+	var user model.User
+	if err := s.svc.DB().First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	if user.TwoFactorEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "2FA 已启用"})
+		return
+	}
+
+	secret, qrCode, err := s.svc.GenerateTOTPSecret(user.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成密钥失败"})
+		return
+	}
+
+	// 临时保存 secret（未激活状态）
+	s.svc.DB().Model(&user).Update("two_factor_secret", secret)
+
+	c.JSON(http.StatusOK, gin.H{
+		"secret": secret,
+		"qrcode": qrCode,
+	})
+}
+
+// verify2FA 验证并正式启用 2FA
+func (s *Server) verify2FA(c *gin.Context) {
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userIDFloat, ok := userIDRaw.(float64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user id"})
+		return
+	}
+	userID := uint(userIDFloat)
+
+	var req struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入验证码"})
+		return
+	}
+
+	var user model.User
+	if err := s.svc.DB().First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	if !s.svc.ValidateTOTP(user.TwoFactorSecret, req.Code) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
+		return
+	}
+
+	// 生成备份码
+	codes, hashJSON, err := s.svc.GenerateBackupCodes()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成备份码失败"})
+		return
+	}
+
+	s.svc.DB().Model(&user).Updates(map[string]interface{}{
+		"two_factor_enabled": true,
+		"backup_codes":       hashJSON,
+	})
+
+	// 记录操作日志
+	username, _ := c.Get("username")
+	s.svc.LogOperation(userID, username.(string), "enable", "2fa", userID, "启用 2FA", c.ClientIP(), c.GetHeader("User-Agent"), "success")
+
+	c.JSON(http.StatusOK, gin.H{
+		"backup_codes": codes,
+		"message":      "2FA 已启用",
+	})
+}
+
+// disable2FA 禁用 2FA
+func (s *Server) disable2FA(c *gin.Context) {
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userIDFloat, ok := userIDRaw.(float64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user id"})
+		return
+	}
+	userID := uint(userIDFloat)
+
+	var req struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入密码"})
+		return
+	}
+
+	var user model.User
+	if err := s.svc.DB().First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	// 验证密码
+	if !model.CheckPassword(user.Password, req.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "密码错误"})
+		return
+	}
+
+	s.svc.DB().Model(&user).Updates(map[string]interface{}{
+		"two_factor_enabled": false,
+		"two_factor_secret":  "",
+		"backup_codes":       "",
+	})
+
+	// 记录操作日志
+	username, _ := c.Get("username")
+	s.svc.LogOperation(userID, username.(string), "disable", "2fa", userID, "禁用 2FA", c.ClientIP(), c.GetHeader("User-Agent"), "success")
+
+	c.JSON(http.StatusOK, gin.H{"message": "2FA 已禁用"})
+}
+
 // ==================== 流量历史 ====================
 
 func (s *Server) getTrafficHistory(c *gin.Context) {
@@ -2497,6 +2767,95 @@ func (s *Server) pingAllNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
+// getNodeHealthLogs 获取节点健康检查日志
+func (s *Server) getNodeHealthLogs(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	var logs []model.HealthCheckLog
+	if err := s.svc.DB().Where("node_id = ?", uint(id)).
+		Order("checked_at DESC").
+		Limit(limit).
+		Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+// getHealthSummary 获取健康检查概览
+func (s *Server) getHealthSummary(c *gin.Context) {
+	var nodes []model.Node
+	if err := s.svc.DB().Find(&nodes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	type NodeHealthSummary struct {
+		NodeID      uint      `json:"node_id"`
+		NodeName    string    `json:"node_name"`
+		Status      string    `json:"status"`
+		LastCheck   time.Time `json:"last_check"`
+		AvgLatency  int       `json:"avg_latency"`
+		FailureRate float64   `json:"failure_rate"`
+	}
+
+	summaries := make([]NodeHealthSummary, 0, len(nodes))
+
+	for _, node := range nodes {
+		var lastLog model.HealthCheckLog
+		var totalChecks int64
+		var failedChecks int64
+		var avgLatency float64
+
+		// 获取最近一次健康检查
+		s.svc.DB().Where("node_id = ?", node.ID).
+			Order("checked_at DESC").
+			First(&lastLog)
+
+		// 统计最近24小时的健康检查
+		since := time.Now().Add(-24 * time.Hour)
+		s.svc.DB().Model(&model.HealthCheckLog{}).
+			Where("node_id = ? AND checked_at >= ?", node.ID, since).
+			Count(&totalChecks)
+
+		s.svc.DB().Model(&model.HealthCheckLog{}).
+			Where("node_id = ? AND checked_at >= ? AND status = ?", node.ID, since, "unhealthy").
+			Count(&failedChecks)
+
+		// 计算平均延迟（仅健康检查）
+		var result struct {
+			AvgLatency float64
+		}
+		s.svc.DB().Model(&model.HealthCheckLog{}).
+			Select("AVG(latency) as avg_latency").
+			Where("node_id = ? AND checked_at >= ? AND status = ?", node.ID, since, "healthy").
+			Scan(&result)
+		avgLatency = result.AvgLatency
+
+		failureRate := 0.0
+		if totalChecks > 0 {
+			failureRate = float64(failedChecks) / float64(totalChecks) * 100
+		}
+
+		summaries = append(summaries, NodeHealthSummary{
+			NodeID:      node.ID,
+			NodeName:    node.Name,
+			Status:      node.Status,
+			LastCheck:   lastLog.CheckedAt,
+			AvgLatency:  int(avgLatency),
+			FailureRate: failureRate,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"summaries": summaries})
+}
+
 // ==================== 数据导出 ====================
 
 // ExportNode 节点导出结构
@@ -3022,7 +3381,12 @@ func (s *Server) getProxyChainConfig(c *gin.Context) {
 // ==================== 隧道转发 (入口-出口模式) ====================
 
 func (s *Server) listTunnels(c *gin.Context) {
-	tunnels, err := s.svc.ListTunnels(nil)
+	userID, isAdmin := getUserInfo(c)
+	var ownerID *uint
+	if !isAdmin {
+		ownerID = &userID
+	}
+	tunnels, err := s.svc.ListTunnels(ownerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

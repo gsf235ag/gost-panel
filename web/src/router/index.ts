@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '../stores/user'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -118,6 +119,9 @@ const router = createRouter({
 // 公开页面（不需要登录）
 const publicPages = ['login', 'register', 'verify-email', 'forgot-password', 'reset-password']
 
+// 管理员专用页面
+const adminOnlyPages = ['users', 'settings', 'notify', 'operation-logs', 'plans', 'rules']
+
 // 路由守卫
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
@@ -125,6 +129,19 @@ router.beforeEach((to, _from, next) => {
 
   if (!isPublicPage && !token) {
     next({ name: 'login' })
+  } else if (!isPublicPage && token) {
+    // 检查是否访问管理员专用页面
+    const isAdminPage = adminOnlyPages.includes(to.name as string)
+    if (isAdminPage) {
+      const userStore = useUserStore()
+      // 如果 user 信息未加载，先放行（会在页面加载后由 API 返回 403）
+      // 如果已加载且不是 admin，则重定向
+      if (userStore.user && userStore.user.role !== 'admin') {
+        next({ name: 'dashboard' })
+        return
+      }
+    }
+    next()
   } else {
     next()
   }

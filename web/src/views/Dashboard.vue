@@ -50,6 +50,66 @@
       </n-space>
     </n-card>
 
+    <!-- Layout Customization Controls -->
+    <n-space justify="space-between" align="center" class="mb-4">
+      <span></span>
+      <n-space>
+        <n-button v-if="!editMode" quaternary size="small" @click="editMode = true">
+          <template #icon>
+            <n-icon><options-outline /></n-icon>
+          </template>
+          自定义布局
+        </n-button>
+        <template v-else>
+          <n-button size="small" type="primary" @click="saveLayout">保存布局</n-button>
+          <n-button size="small" @click="resetLayout">恢复默认</n-button>
+          <n-button size="small" quaternary @click="editMode = false">取消</n-button>
+        </template>
+      </n-space>
+    </n-space>
+
+    <!-- Edit Mode: Card Visibility Toggle -->
+    <n-card v-if="editMode" class="mb-4">
+      <template #header>选择要显示的卡片</template>
+      <n-space>
+        <n-checkbox
+          v-for="card in allCards"
+          :key="card.id"
+          :checked="visibleCardIds.includes(card.id)"
+          @update:checked="(val: boolean) => toggleCard(card.id, val)"
+        >
+          {{ card.title }}
+        </n-checkbox>
+      </n-space>
+      <n-text depth="3" style="font-size: 12px; margin-top: 8px; display: block;">
+        提示: 拖拽卡片可以调整顺序
+      </n-text>
+    </n-card>
+
+    <!-- User Plan Info (for non-admin users) -->
+    <n-card v-if="userStore.user?.role !== 'admin'" class="mb-4">
+      <template #header>我的套餐</template>
+      <n-space vertical>
+        <n-descriptions :column="2" label-placement="left" size="small">
+          <n-descriptions-item label="当前套餐">
+            {{ userStore.user?.plan?.name || '无套餐' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="到期时间">
+            {{ userStore.user?.plan_expire_at ? formatDate(userStore.user.plan_expire_at) : '永久' }}
+          </n-descriptions-item>
+        </n-descriptions>
+        <n-progress
+          v-if="userStore.user?.plan?.traffic_quota"
+          type="line"
+          :percentage="trafficPercentage"
+          :status="trafficPercentage > 90 ? 'error' : trafficPercentage > 70 ? 'warning' : 'success'"
+        />
+        <n-text v-if="userStore.user?.plan?.traffic_quota" depth="3">
+          已使用 {{ formatBytes(userStore.user?.plan_traffic_used || 0) }} / {{ formatBytes(userStore.user?.plan?.traffic_quota || 0) }}
+        </n-text>
+      </n-space>
+    </n-card>
+
     <!-- Stats Cards -->
     <n-grid :x-gap="16" :y-gap="16" :cols="4">
       <n-grid-item>
@@ -157,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, h, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, h, nextTick, computed } from 'vue'
 import { NTag, NSwitch, NTooltip, NDivider } from 'naive-ui'
 import {
   ServerOutline,
@@ -169,7 +229,10 @@ import {
 import * as echarts from 'echarts'
 import { getStats, getNodes, getTrafficHistory } from '../api'
 import { useBrowserNotification } from '../composables/useBrowserNotification'
+import { useUserStore } from '../stores/user'
+import { dashboardGuide, shouldShowGuide, markGuideComplete } from '../guides'
 
+const userStore = useUserStore()
 const { requestPermission, notifyNodeOffline, notifyNodeOnline, checkPermission } = useBrowserNotification()
 const notificationsEnabled = ref(false)
 
@@ -254,6 +317,19 @@ const formatBytes = (bytes: number) => {
 const formatTime = (date: Date) => {
   return date.toLocaleTimeString()
 }
+
+const formatDate = (dateStr: string) => {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+// Compute traffic percentage for user plan
+const trafficPercentage = computed(() => {
+  const quota = userStore.user?.plan?.traffic_quota || 0
+  const used = userStore.user?.plan_traffic_used || 0
+  if (quota === 0) return 0
+  return Math.min(100, Math.round((used / quota) * 100))
+})
 
 const loadStats = async () => {
   loading.value = true
@@ -683,6 +759,16 @@ onMounted(() => {
   if (savedNotificationState === 'true' && checkPermission() === 'granted') {
     notificationsEnabled.value = true
   }
+
+  // 首次访问时显示引导
+  nextTick(() => {
+    if (shouldShowGuide('dashboard')) {
+      setTimeout(() => {
+        dashboardGuide()
+        markGuideComplete('dashboard')
+      }, 500)
+    }
+  })
 })
 
 onUnmounted(() => {

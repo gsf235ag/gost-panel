@@ -101,8 +101,13 @@ export const getNodeInstallScript = (id: number, os: string = 'linux') =>
   api.get(`/nodes/${id}/install-script`, { params: { os } })
 export const pingNode = (id: number) => api.get(`/nodes/${id}/ping`)
 export const pingAllNodes = () => api.get('/nodes/ping')
+export const getNodeHealthLogs = (nodeId: number, limit: number = 50) =>
+  api.get(`/nodes/${nodeId}/health-logs`, { params: { limit } })
+export const getHealthSummary = () => api.get('/health-summary')
 
 // 节点批量操作
+export const batchEnableNodes = (ids: number[]) => api.post('/nodes/batch-enable', { ids })
+export const batchDisableNodes = (ids: number[]) => api.post('/nodes/batch-disable', { ids })
 export const batchDeleteNodes = (ids: number[]) => api.post('/nodes/batch-delete', { ids })
 export const batchSyncNodes = (ids: number[]) => api.post('/nodes/batch-sync', { ids })
 
@@ -118,7 +123,10 @@ export const getClientGostConfig = (id: number) => api.get(`/clients/${id}/gost-
 export const getClientProxyURI = (id: number) => api.get(`/clients/${id}/proxy-uri`)
 
 // 客户端批量操作
+export const batchEnableClients = (ids: number[]) => api.post('/clients/batch-enable', { ids })
+export const batchDisableClients = (ids: number[]) => api.post('/clients/batch-disable', { ids })
 export const batchDeleteClients = (ids: number[]) => api.post('/clients/batch-delete', { ids })
+export const batchSyncClients = (ids: number[]) => api.post('/clients/batch-sync', { ids })
 
 // 用户管理
 export const getUsers = () => api.get('/users')
@@ -135,6 +143,12 @@ export const resetUserQuota = (id: number) => api.post(`/users/${id}/reset-quota
 // 个人账户设置
 export const getProfile = () => api.get('/profile')
 export const updateProfile = (data: ProfileUpdateRequest) => api.put('/profile', data)
+
+// 2FA 双因素认证
+export const enable2FA = () => api.post('/profile/2fa/enable')
+export const verify2FA = (code: string) => api.post('/profile/2fa/verify', { code })
+export const disable2FA = (password: string) => api.post('/profile/2fa/disable', { password })
+export const login2FA = (temp_token: string, code: string) => axios.post('/api/login/2fa', { temp_token, code })
 
 // 用户注册和验证 (公开接口)
 export const register = (username: string, email: string, password: string) =>
@@ -361,5 +375,10 @@ export const createConfigVersion = (nodeId: number, comment: string) => api.post
 export const getConfigVersion = (versionId: number) => api.get(`/config-versions/${versionId}`)
 export const restoreConfigVersion = (versionId: number) => api.post(`/config-versions/${versionId}/restore`)
 export const deleteConfigVersion = (versionId: number) => api.delete(`/config-versions/${versionId}`)
+
+// 会话管理
+export const getSessions = () => api.get('/sessions')
+export const deleteSession = (id: number) => api.delete(`/sessions/${id}`)
+export const deleteOtherSessions = () => api.delete('/sessions/others')
 
 export default api
