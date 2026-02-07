@@ -437,11 +437,11 @@ const loadResourceOptions = async () => {
       getProxyChains(),
       getNodeGroups()
     ])
-    allNodes.value = nodes || []
-    allTunnels.value = tunnels || []
-    allPortForwards.value = pfs || []
-    allProxyChains.value = chains || []
-    allNodeGroups.value = groups || []
+    allNodes.value = (nodes as any) || []
+    allTunnels.value = (tunnels as any) || []
+    allPortForwards.value = (pfs as any) || []
+    allProxyChains.value = (chains as any) || []
+    allNodeGroups.value = (groups as any) || []
   } catch (e) {
     message.error('加载资源列表失败')
   }
@@ -470,7 +470,7 @@ const handleEdit = async (row: any) => {
   await loadResourceOptions()
   try {
     const resources = await getPlanResources(row.id)
-    planResources.value = resources || {
+    planResources.value = (resources as any) || {
       node: [],
       tunnel: [],
       port_forward: [],
