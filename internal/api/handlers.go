@@ -775,15 +775,6 @@ func (s *Server) syncNodeConfig(c *gin.Context) {
 		return
 	}
 
-	// 检查节点是否在线
-	if node.Status != "online" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "node is offline",
-			"message": "节点离线，请等待 Agent 上线后自动同步配置",
-		})
-		return
-	}
-
 	// 生成配置并自动保存版本快照
 	generator := gost.NewConfigGenerator()
 	bypasses, _ := s.svc.GetBypassesByNode(node.ID)
@@ -802,9 +793,15 @@ func (s *Server) syncNodeConfig(c *gin.Context) {
 	// 标记节点需要重新加载配置（通过更新 updated_at）
 	s.svc.TouchNode(uint(id))
 
+	// 根据节点状态返回不同提示
+	msg := "配置已更新，Agent 将在下次心跳时自动同步（最多 30 秒）"
+	if node.Status != "online" {
+		msg = "配置已生成，Agent 上线后将自动加载最新配置"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "配置已更新，Agent 将在下次心跳时自动同步（最多 30 秒）",
+		"message": msg,
 	})
 }
 

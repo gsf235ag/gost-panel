@@ -5,7 +5,10 @@ import type { User } from '../types'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('token') || '')
-  const user = ref<User | null>(null)
+
+  // 从 localStorage 恢复用户信息
+  const storedUser = localStorage.getItem('user')
+  const user = ref<User | null>(storedUser ? JSON.parse(storedUser) : null)
 
   const login = async (username: string, password: string) => {
     const res = await apiLogin(username, password)
@@ -18,12 +21,14 @@ export const useUserStore = defineStore('user', () => {
     token.value = res.token
     user.value = res.user
     localStorage.setItem('token', res.token)
+    localStorage.setItem('user', JSON.stringify(res.user))
   }
 
   const logout = () => {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
 
   return { token, user, login, logout }
