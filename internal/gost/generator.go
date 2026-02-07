@@ -19,8 +19,8 @@ func (g *ConfigGenerator) GenerateNodeConfig(node *model.Node) map[string]interf
 	return g.GenerateNodeConfigWithRules(node, nil, nil, nil)
 }
 
-// GenerateNodeConfigWithRules 生成节点完整配置 (含分流/准入/主机映射规则)
-func (g *ConfigGenerator) GenerateNodeConfigWithRules(node *model.Node, bypasses []model.Bypass, admissions []model.Admission, hostMappings []model.HostMapping) map[string]interface{} {
+// GenerateNodeConfigWithRules 生成节点完整配置 (含分流/准入/主机映射/反向代理/记录器规则)
+func (g *ConfigGenerator) GenerateNodeConfigWithRules(node *model.Node, bypasses []model.Bypass, admissions []model.Admission, hostMappings []model.HostMapping, ingresses ...[]model.Ingress) map[string]interface{} {
 	config := map[string]interface{}{}
 
 	// API 配置
@@ -91,6 +91,11 @@ func (g *ConfigGenerator) GenerateNodeConfigWithRules(node *model.Node, bypasses
 	// Hosts 配置
 	if len(hostMappings) > 0 {
 		config["hosts"] = g.generateHostsConfigs(node.ID, hostMappings)
+	}
+
+	// Ingress 配置
+	if len(ingresses) > 0 && len(ingresses[0]) > 0 {
+		config["ingresses"] = g.generateIngressConfigs(node.ID, ingresses[0])
 	}
 
 	return config
@@ -935,6 +940,40 @@ func (g *ConfigGenerator) generateHostsConfigs(nodeID uint, hostMappings []model
 		{
 			"name":     fmt.Sprintf("hosts-%d", nodeID),
 			"mappings": allMappings,
+		},
+	}
+}
+
+// generateIngressConfigs 生成 Ingress 反向代理配置
+func (g *ConfigGenerator) generateIngressConfigs(nodeID uint, ingresses []model.Ingress) []map[string]interface{} {
+	type ingressRule struct {
+		Hostname string `json:"hostname"`
+		Endpoint string `json:"endpoint"`
+	}
+
+	allRules := []map[string]interface{}{}
+
+	for _, ing := range ingresses {
+		var rules []ingressRule
+		if err := json.Unmarshal([]byte(ing.Rules), &rules); err == nil {
+			for _, r := range rules {
+				rule := map[string]interface{}{
+					"hostname": r.Hostname,
+					"endpoint": r.Endpoint,
+				}
+				allRules = append(allRules, rule)
+			}
+		}
+	}
+
+	if len(allRules) == 0 {
+		return nil
+	}
+
+	return []map[string]interface{}{
+		{
+			"name":  fmt.Sprintf("ingress-%d", nodeID),
+			"rules": allRules,
 		},
 	}
 }

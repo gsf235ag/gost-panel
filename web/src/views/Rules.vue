@@ -43,6 +43,32 @@
           <EmptyState v-else-if="!hostsLoading && hostMappings.length === 0" type="rules" action-text="添加映射" @action="openHostsModal()" />
           <n-data-table v-else :columns="hostsColumns" :data="hostMappings" :loading="hostsLoading" :row-key="(row: any) => row.id" size="small" />
         </n-tab-pane>
+
+        <!-- Ingress 反向代理 -->
+        <n-tab-pane name="ingress" tab="反向代理 (Ingress)">
+          <n-alert type="info" style="margin-bottom: 16px;">
+            Ingress 根据域名将请求路由到不同的后端服务（endpoint），实现虚拟主机或反向代理功能。
+          </n-alert>
+          <n-space justify="end" style="margin-bottom: 12px;">
+            <n-button type="primary" size="small" @click="openIngressModal()">添加规则</n-button>
+          </n-space>
+          <TableSkeleton v-if="ingressLoading && ingresses.length === 0" :rows="3" />
+          <EmptyState v-else-if="!ingressLoading && ingresses.length === 0" type="rules" action-text="添加规则" @action="openIngressModal()" />
+          <n-data-table v-else :columns="ingressColumns" :data="ingresses" :loading="ingressLoading" :row-key="(row: any) => row.id" size="small" />
+        </n-tab-pane>
+
+        <!-- Recorder 流量记录 -->
+        <n-tab-pane name="recorder" tab="流量记录 (Recorder)">
+          <n-alert type="info" style="margin-bottom: 16px;">
+            Recorder 记录代理流量数据，支持输出到文件、Redis 或 HTTP 接口，用于审计和分析。
+          </n-alert>
+          <n-space justify="end" style="margin-bottom: 12px;">
+            <n-button type="primary" size="small" @click="openRecorderModal()">添加记录器</n-button>
+          </n-space>
+          <TableSkeleton v-if="recorderLoading && recorders.length === 0" :rows="3" />
+          <EmptyState v-else-if="!recorderLoading && recorders.length === 0" type="rules" action-text="添加记录器" @action="openRecorderModal()" />
+          <n-data-table v-else :columns="recorderColumns" :data="recorders" :loading="recorderLoading" :row-key="(row: any) => row.id" size="small" />
+        </n-tab-pane>
       </n-tabs>
     </n-card>
 
@@ -120,6 +146,51 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- Ingress Modal -->
+    <n-modal v-model:show="showIngressModal" preset="dialog" :title="editingIngress ? '编辑反向代理规则' : '添加反向代理规则'" style="width: 650px;">
+      <n-form :model="ingressForm" label-placement="left" label-width="100">
+        <n-form-item label="名称" required>
+          <n-input v-model:value="ingressForm.name" placeholder="例如: Web服务路由" />
+        </n-form-item>
+        <n-form-item label="关联节点">
+          <n-select v-model:value="ingressForm.node_id" :options="nodeOptions" clearable filterable placeholder="全局 (不关联节点)" />
+        </n-form-item>
+        <n-form-item label="路由规则">
+          <n-input v-model:value="ingressForm.rulesText" type="textarea" :rows="8" placeholder="每行一条: 域名 后端地址&#10;例如:&#10;example.com 192.168.1.1:8080&#10;api.example.com 192.168.1.2:3000&#10;*.test.com 10.0.0.1:80" />
+        </n-form-item>
+      </n-form>
+      <template #action>
+        <n-space>
+          <n-button @click="showIngressModal = false">取消</n-button>
+          <n-button type="primary" :loading="saving" @click="handleSaveIngress">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Recorder Modal -->
+    <n-modal v-model:show="showRecorderModal" preset="dialog" :title="editingRecorder ? '编辑记录器' : '添加记录器'" style="width: 600px;">
+      <n-form :model="recorderForm" label-placement="left" label-width="100">
+        <n-form-item label="名称" required>
+          <n-input v-model:value="recorderForm.name" placeholder="例如: 流量审计" />
+        </n-form-item>
+        <n-form-item label="类型">
+          <n-select v-model:value="recorderForm.type" :options="recorderTypeOptions" />
+        </n-form-item>
+        <n-form-item label="关联节点">
+          <n-select v-model:value="recorderForm.node_id" :options="nodeOptions" clearable filterable placeholder="全局 (不关联节点)" />
+        </n-form-item>
+        <n-form-item label="配置">
+          <n-input v-model:value="recorderForm.configText" type="textarea" :rows="6" :placeholder="recorderConfigPlaceholder" />
+        </n-form-item>
+      </n-form>
+      <template #action>
+        <n-space>
+          <n-button @click="showRecorderModal = false">取消</n-button>
+          <n-button type="primary" :loading="saving" @click="handleSaveRecorder">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -130,6 +201,8 @@ import {
   getBypasses, createBypass, updateBypass, deleteBypass,
   getAdmissions, createAdmission, updateAdmission, deleteAdmission,
   getHostMappings, createHostMapping, updateHostMapping, deleteHostMapping,
+  getIngresses, createIngress, updateIngress, deleteIngress,
+  getRecorders, createRecorder, updateRecorder, deleteRecorder,
   getNodes,
 } from '../api'
 import EmptyState from '../components/EmptyState.vue'
@@ -145,25 +218,35 @@ const saving = ref(false)
 const bypasses = ref<any[]>([])
 const admissions = ref<any[]>([])
 const hostMappings = ref<any[]>([])
+const ingresses = ref<any[]>([])
+const recorders = ref<any[]>([])
 const allNodes = ref<any[]>([])
 
 // Loading states
 const bypassLoading = ref(false)
 const admissionLoading = ref(false)
 const hostsLoading = ref(false)
+const ingressLoading = ref(false)
+const recorderLoading = ref(false)
 
 // Modal states
 const showBypassModal = ref(false)
 const showAdmissionModal = ref(false)
 const showHostsModal = ref(false)
+const showIngressModal = ref(false)
+const showRecorderModal = ref(false)
 const editingBypass = ref<any>(null)
 const editingAdmission = ref<any>(null)
 const editingHosts = ref<any>(null)
+const editingIngress = ref<any>(null)
+const editingRecorder = ref<any>(null)
 
 // Forms
 const bypassForm = ref({ name: '', whitelist: false, node_id: null as number | null, matchersText: '' })
 const admissionForm = ref({ name: '', whitelist: false, node_id: null as number | null, matchersText: '' })
 const hostsForm = ref({ name: '', node_id: null as number | null, mappingsText: '' })
+const ingressForm = ref({ name: '', node_id: null as number | null, rulesText: '' })
+const recorderForm = ref({ name: '', type: 'file', node_id: null as number | null, configText: '' })
 
 const nodeOptions = computed(() =>
   allNodes.value.map((n: any) => ({
@@ -171,6 +254,21 @@ const nodeOptions = computed(() =>
     value: n.id,
   }))
 )
+
+const recorderTypeOptions = [
+  { label: '文件 (file)', value: 'file' },
+  { label: 'Redis', value: 'redis' },
+  { label: 'HTTP', value: 'http' },
+]
+
+const recorderConfigPlaceholder = computed(() => {
+  switch (recorderForm.value.type) {
+    case 'file': return '{"path": "/var/log/gost/traffic.log"}'
+    case 'redis': return '{"addr": "127.0.0.1:6379", "db": 0, "key": "gost:recorder"}'
+    case 'http': return '{"url": "http://localhost:8080/api/record", "timeout": 5}'
+    default: return '{}'
+  }
+})
 
 // Parse matchers text to JSON array
 const parseMatchers = (text: string): string => {
@@ -211,6 +309,28 @@ const mappingsToText = (json: string): string => {
       if (m.prefer) line += ` ${m.prefer}`
       return line
     }).join('\n')
+  } catch { return '' }
+}
+
+// Parse ingress rules text to JSON
+const parseIngressRules = (text: string): string => {
+  const rules: { hostname: string; endpoint: string }[] = []
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+  for (const line of lines) {
+    const parts = line.split(/\s+/)
+    if (parts.length >= 2) {
+      rules.push({ hostname: parts[0]!, endpoint: parts[1]! })
+    }
+  }
+  return JSON.stringify(rules)
+}
+
+// Parse ingress rules JSON to text
+const ingressRulesToText = (json: string): string => {
+  try {
+    const arr = JSON.parse(json)
+    if (!Array.isArray(arr)) return ''
+    return arr.map((r: any) => `${r.hostname} ${r.endpoint}`).join('\n')
   } catch { return '' }
 }
 
@@ -469,6 +589,170 @@ const handleDeleteHosts = (row: any) => {
   })
 }
 
+// ==================== Ingress ====================
+const ingressColumns = [
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '名称', key: 'name', width: 150 },
+  {
+    title: '规则数', key: 'rules', width: 80,
+    render: (row: any) => countMatchers(row.rules),
+  },
+  {
+    title: '关联节点', key: 'node_id', width: 120,
+    render: (row: any) => {
+      if (!row.node_id) return h(NTag, { size: 'small' }, () => '全局')
+      const node = allNodes.value.find((n: any) => n.id === row.node_id)
+      return node ? node.name : `#${row.node_id}`
+    },
+  },
+  {
+    title: '操作', key: 'actions', width: 150,
+    render: (row: any) => h(NSpace, { size: 'small' }, () => [
+      h(NButton, { size: 'small', onClick: () => openIngressModal(row) }, () => '编辑'),
+      h(NButton, { size: 'small', type: 'error', onClick: () => handleDeleteIngress(row) }, () => '删除'),
+    ]),
+  },
+]
+
+const loadIngresses = async () => {
+  ingressLoading.value = true
+  try {
+    const data: any = await getIngresses()
+    ingresses.value = data || []
+  } catch { message.error('加载反向代理规则失败') }
+  finally { ingressLoading.value = false }
+}
+
+const openIngressModal = (row?: any) => {
+  if (row) {
+    editingIngress.value = row
+    ingressForm.value = { name: row.name, node_id: row.node_id || null, rulesText: ingressRulesToText(row.rules) }
+  } else {
+    editingIngress.value = null
+    ingressForm.value = { name: '', node_id: null, rulesText: '' }
+  }
+  showIngressModal.value = true
+}
+
+const handleSaveIngress = async () => {
+  if (!ingressForm.value.name) { message.error('请输入名称'); return }
+  saving.value = true
+  try {
+    const data = {
+      name: ingressForm.value.name,
+      node_id: ingressForm.value.node_id || undefined,
+      rules: parseIngressRules(ingressForm.value.rulesText),
+    }
+    if (editingIngress.value) {
+      await updateIngress(editingIngress.value.id, data)
+      message.success('规则已更新')
+    } else {
+      await createIngress(data)
+      message.success('规则已创建')
+    }
+    showIngressModal.value = false
+    loadIngresses()
+  } catch (e: any) { message.error(e.response?.data?.error || '保存失败') }
+  finally { saving.value = false }
+}
+
+const handleDeleteIngress = (row: any) => {
+  dialog.warning({
+    title: '删除反向代理规则',
+    content: `确定要删除 "${row.name}" 吗？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try { await deleteIngress(row.id); message.success('已删除'); loadIngresses() }
+      catch { message.error('删除失败') }
+    },
+  })
+}
+
+// ==================== Recorder ====================
+const recorderColumns = [
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '名称', key: 'name', width: 150 },
+  {
+    title: '类型', key: 'type', width: 100,
+    render: (row: any) => {
+      const typeMap: Record<string, string> = { file: '文件', redis: 'Redis', http: 'HTTP' }
+      return h(NTag, { size: 'small' }, () => typeMap[row.type] || row.type)
+    },
+  },
+  {
+    title: '关联节点', key: 'node_id', width: 120,
+    render: (row: any) => {
+      if (!row.node_id) return h(NTag, { size: 'small' }, () => '全局')
+      const node = allNodes.value.find((n: any) => n.id === row.node_id)
+      return node ? node.name : `#${row.node_id}`
+    },
+  },
+  {
+    title: '操作', key: 'actions', width: 150,
+    render: (row: any) => h(NSpace, { size: 'small' }, () => [
+      h(NButton, { size: 'small', onClick: () => openRecorderModal(row) }, () => '编辑'),
+      h(NButton, { size: 'small', type: 'error', onClick: () => handleDeleteRecorder(row) }, () => '删除'),
+    ]),
+  },
+]
+
+const loadRecorders = async () => {
+  recorderLoading.value = true
+  try {
+    const data: any = await getRecorders()
+    recorders.value = data || []
+  } catch { message.error('加载记录器失败') }
+  finally { recorderLoading.value = false }
+}
+
+const openRecorderModal = (row?: any) => {
+  if (row) {
+    editingRecorder.value = row
+    recorderForm.value = { name: row.name, type: row.type || 'file', node_id: row.node_id || null, configText: row.config || '' }
+  } else {
+    editingRecorder.value = null
+    recorderForm.value = { name: '', type: 'file', node_id: null, configText: '' }
+  }
+  showRecorderModal.value = true
+}
+
+const handleSaveRecorder = async () => {
+  if (!recorderForm.value.name) { message.error('请输入名称'); return }
+  saving.value = true
+  try {
+    const data = {
+      name: recorderForm.value.name,
+      type: recorderForm.value.type,
+      node_id: recorderForm.value.node_id || undefined,
+      config: recorderForm.value.configText,
+    }
+    if (editingRecorder.value) {
+      await updateRecorder(editingRecorder.value.id, data)
+      message.success('记录器已更新')
+    } else {
+      await createRecorder(data)
+      message.success('记录器已创建')
+    }
+    showRecorderModal.value = false
+    loadRecorders()
+  } catch (e: any) { message.error(e.response?.data?.error || '保存失败') }
+  finally { saving.value = false }
+}
+
+const handleDeleteRecorder = (row: any) => {
+  dialog.warning({
+    title: '删除记录器',
+    content: `确定要删除 "${row.name}" 吗？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try { await deleteRecorder(row.id); message.success('已删除'); loadRecorders() }
+      catch { message.error('删除失败') }
+    },
+  })
+}
+
 // Load all nodes for selector
 const loadNodes = async () => {
   try {
@@ -482,6 +766,8 @@ onMounted(() => {
   loadBypasses()
   loadAdmissions()
   loadHostMappings()
+  loadIngresses()
+  loadRecorders()
 })
 </script>
 

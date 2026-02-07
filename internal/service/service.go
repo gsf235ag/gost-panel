@@ -2005,3 +2005,89 @@ func (s *Service) GetHostMappingsByNode(nodeID uint) ([]model.HostMapping, error
 	err := s.db.Where("node_id = ? OR node_id IS NULL", nodeID).Find(&mappings).Error
 	return mappings, err
 }
+
+// ==================== Ingress 反向代理 ====================
+
+func (s *Service) ListIngresses(userID uint, isAdmin bool) ([]model.Ingress, error) {
+	var ingresses []model.Ingress
+	query := s.db.Order("id desc")
+	if !isAdmin {
+		query = query.Where("owner_id = ? OR owner_id IS NULL", userID)
+	}
+	return ingresses, query.Find(&ingresses).Error
+}
+
+func (s *Service) GetIngress(id uint) (*model.Ingress, error) {
+	var ingress model.Ingress
+	err := s.db.First(&ingress, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &ingress, nil
+}
+
+func (s *Service) CreateIngress(ingress *model.Ingress) error {
+	ingress.CreatedAt = time.Now()
+	ingress.UpdatedAt = time.Now()
+	return s.db.Create(ingress).Error
+}
+
+func (s *Service) UpdateIngress(id uint, updates map[string]interface{}) error {
+	updates["updated_at"] = time.Now()
+	delete(updates, "id")
+	delete(updates, "created_at")
+	return s.db.Model(&model.Ingress{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (s *Service) DeleteIngress(id uint) error {
+	return s.db.Delete(&model.Ingress{}, id).Error
+}
+
+func (s *Service) GetIngressesByNode(nodeID uint) ([]model.Ingress, error) {
+	var ingresses []model.Ingress
+	err := s.db.Where("node_id = ? OR node_id IS NULL", nodeID).Find(&ingresses).Error
+	return ingresses, err
+}
+
+// ==================== Recorder 流量记录 ====================
+
+func (s *Service) ListRecorders(userID uint, isAdmin bool) ([]model.Recorder, error) {
+	var recorders []model.Recorder
+	query := s.db.Order("id desc")
+	if !isAdmin {
+		query = query.Where("owner_id = ? OR owner_id IS NULL", userID)
+	}
+	return recorders, query.Find(&recorders).Error
+}
+
+func (s *Service) GetRecorder(id uint) (*model.Recorder, error) {
+	var recorder model.Recorder
+	err := s.db.First(&recorder, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &recorder, nil
+}
+
+func (s *Service) CreateRecorder(recorder *model.Recorder) error {
+	recorder.CreatedAt = time.Now()
+	recorder.UpdatedAt = time.Now()
+	return s.db.Create(recorder).Error
+}
+
+func (s *Service) UpdateRecorder(id uint, updates map[string]interface{}) error {
+	updates["updated_at"] = time.Now()
+	delete(updates, "id")
+	delete(updates, "created_at")
+	return s.db.Model(&model.Recorder{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (s *Service) DeleteRecorder(id uint) error {
+	return s.db.Delete(&model.Recorder{}, id).Error
+}
+
+func (s *Service) GetRecordersByNode(nodeID uint) ([]model.Recorder, error) {
+	var recorders []model.Recorder
+	err := s.db.Where("node_id = ? OR node_id IS NULL", nodeID).Find(&recorders).Error
+	return recorders, err
+}

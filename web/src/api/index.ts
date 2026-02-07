@@ -32,6 +32,10 @@ import type {
   AdmissionUpdateRequest,
   HostMappingCreateRequest,
   HostMappingUpdateRequest,
+  IngressCreateRequest,
+  IngressUpdateRequest,
+  RecorderCreateRequest,
+  RecorderUpdateRequest,
   PaginationParams,
   ProfileUpdateRequest,
 } from '../types'
@@ -303,5 +307,19 @@ export const getHostMapping = (id: number) => api.get(`/host-mappings/${id}`)
 export const createHostMapping = (data: HostMappingCreateRequest) => api.post('/host-mappings', data)
 export const updateHostMapping = (id: number, data: HostMappingUpdateRequest) => api.put(`/host-mappings/${id}`, data)
 export const deleteHostMapping = (id: number) => api.delete(`/host-mappings/${id}`)
+
+// Ingress 反向代理
+export const getIngresses = () => api.get('/ingresses')
+export const getIngress = (id: number) => api.get(`/ingresses/${id}`)
+export const createIngress = (data: IngressCreateRequest) => api.post('/ingresses', data)
+export const updateIngress = (id: number, data: IngressUpdateRequest) => api.put(`/ingresses/${id}`, data)
+export const deleteIngress = (id: number) => api.delete(`/ingresses/${id}`)
+
+// Recorder 流量记录
+export const getRecorders = () => api.get('/recorders')
+export const getRecorder = (id: number) => api.get(`/recorders/${id}`)
+export const createRecorder = (data: RecorderCreateRequest) => api.post('/recorders', data)
+export const updateRecorder = (id: number, data: RecorderUpdateRequest) => api.put(`/recorders/${id}`, data)
+export const deleteRecorder = (id: number) => api.delete(`/recorders/${id}`)
 
 export default api

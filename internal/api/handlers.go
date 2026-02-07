@@ -397,7 +397,8 @@ func (s *Server) getNodeGostConfig(c *gin.Context) {
 	bypasses, _ := s.svc.GetBypassesByNode(node.ID)
 	admissions, _ := s.svc.GetAdmissionsByNode(node.ID)
 	hostMappings, _ := s.svc.GetHostMappingsByNode(node.ID)
-	config := generator.GenerateNodeConfigWithRules(node, bypasses, admissions, hostMappings)
+	ingresses, _ := s.svc.GetIngressesByNode(node.ID)
+	config := generator.GenerateNodeConfigWithRules(node, bypasses, admissions, hostMappings, ingresses)
 
 	c.YAML(http.StatusOK, config)
 }
@@ -972,7 +973,8 @@ func (s *Server) agentGetConfig(c *gin.Context) {
 		bypasses, _ := s.svc.GetBypassesByNode(node.ID)
 		admissions, _ := s.svc.GetAdmissionsByNode(node.ID)
 		hostMappings, _ := s.svc.GetHostMappingsByNode(node.ID)
-		config := generator.GenerateNodeConfigWithRules(node, bypasses, admissions, hostMappings)
+		ingresses, _ := s.svc.GetIngressesByNode(node.ID)
+		config := generator.GenerateNodeConfigWithRules(node, bypasses, admissions, hostMappings, ingresses)
 		c.YAML(http.StatusOK, config)
 		return
 	}
@@ -3461,5 +3463,131 @@ func (s *Server) deleteHostMapping(c *gin.Context) {
 		return
 	}
 	s.audit.LogSuccess(c, "delete", "host_mapping", uint(id), "")
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// ==================== Ingress 反向代理 ====================
+
+func (s *Server) listIngresses(c *gin.Context) {
+	userID, isAdmin := getUserInfo(c)
+	ingresses, err := s.svc.ListIngresses(userID, isAdmin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, ingresses)
+}
+
+func (s *Server) getIngress(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	ingress, err := s.svc.GetIngress(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ingress not found"})
+		return
+	}
+	c.JSON(http.StatusOK, ingress)
+}
+
+func (s *Server) createIngress(c *gin.Context) {
+	userID, _ := getUserInfo(c)
+	var ingress model.Ingress
+	if err := c.ShouldBindJSON(&ingress); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ingress.OwnerID = &userID
+	if err := s.svc.CreateIngress(&ingress); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "create", "ingress", ingress.ID, ingress.Name)
+	c.JSON(http.StatusOK, ingress)
+}
+
+func (s *Server) updateIngress(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var updates map[string]interface{}
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.svc.UpdateIngress(uint(id), updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "update", "ingress", uint(id), "")
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (s *Server) deleteIngress(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err := s.svc.DeleteIngress(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "delete", "ingress", uint(id), "")
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// ==================== Recorder 流量记录 ====================
+
+func (s *Server) listRecorders(c *gin.Context) {
+	userID, isAdmin := getUserInfo(c)
+	recorders, err := s.svc.ListRecorders(userID, isAdmin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, recorders)
+}
+
+func (s *Server) getRecorder(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	recorder, err := s.svc.GetRecorder(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "recorder not found"})
+		return
+	}
+	c.JSON(http.StatusOK, recorder)
+}
+
+func (s *Server) createRecorder(c *gin.Context) {
+	userID, _ := getUserInfo(c)
+	var recorder model.Recorder
+	if err := c.ShouldBindJSON(&recorder); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	recorder.OwnerID = &userID
+	if err := s.svc.CreateRecorder(&recorder); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "create", "recorder", recorder.ID, recorder.Name)
+	c.JSON(http.StatusOK, recorder)
+}
+
+func (s *Server) updateRecorder(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var updates map[string]interface{}
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.svc.UpdateRecorder(uint(id), updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "update", "recorder", uint(id), "")
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (s *Server) deleteRecorder(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err := s.svc.DeleteRecorder(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.audit.LogSuccess(c, "delete", "recorder", uint(id), "")
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }

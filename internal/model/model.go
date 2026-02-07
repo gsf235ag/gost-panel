@@ -398,6 +398,29 @@ type HostMapping struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Ingress 反向代理域名路由
+type Ingress struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"size:100;not null" json:"name"`
+	Rules     string    `gorm:"type:text" json:"rules"` // JSON: [{"hostname":"example.com","endpoint":"192.168.1.1:8080"}]
+	NodeID    *uint     `gorm:"index" json:"node_id,omitempty"`
+	OwnerID   *uint     `gorm:"index" json:"owner_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Recorder 流量记录器
+type Recorder struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"size:100;not null" json:"name"`
+	Type      string    `gorm:"size:20;default:file" json:"type"` // file, redis, http
+	Config    string    `gorm:"type:text" json:"config"`          // JSON 配置
+	NodeID    *uint     `gorm:"index" json:"node_id,omitempty"`
+	OwnerID   *uint     `gorm:"index" json:"owner_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // SiteConfig 网站配置
 type SiteConfig struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
@@ -422,7 +445,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 	}
 
 	// 自动迁移
-	if err := db.AutoMigrate(&Node{}, &Client{}, &Service{}, &User{}, &Plan{}, &TrafficHistory{}, &NotifyChannel{}, &AlertRule{}, &AlertLog{}, &PortForward{}, &NodeGroup{}, &NodeGroupMember{}, &DNSConfig{}, &OperationLog{}, &ProxyChain{}, &ProxyChainHop{}, &Tunnel{}, &SiteConfig{}, &Tag{}, &NodeTag{}, &Bypass{}, &Admission{}, &HostMapping{}); err != nil {
+	if err := db.AutoMigrate(&Node{}, &Client{}, &Service{}, &User{}, &Plan{}, &TrafficHistory{}, &NotifyChannel{}, &AlertRule{}, &AlertLog{}, &PortForward{}, &NodeGroup{}, &NodeGroupMember{}, &DNSConfig{}, &OperationLog{}, &ProxyChain{}, &ProxyChainHop{}, &Tunnel{}, &SiteConfig{}, &Tag{}, &NodeTag{}, &Bypass{}, &Admission{}, &HostMapping{}, &Ingress{}, &Recorder{}); err != nil {
 		return nil, err
 	}
 

@@ -321,6 +321,20 @@ func (s *Server) setupRoutes() {
 			auth.POST("/host-mappings", s.createHostMapping)
 			auth.PUT("/host-mappings/:id", s.updateHostMapping)
 			auth.DELETE("/host-mappings/:id", s.deleteHostMapping)
+
+			// Ingress 反向代理
+			auth.GET("/ingresses", s.listIngresses)
+			auth.GET("/ingresses/:id", s.getIngress)
+			auth.POST("/ingresses", s.createIngress)
+			auth.PUT("/ingresses/:id", s.updateIngress)
+			auth.DELETE("/ingresses/:id", s.deleteIngress)
+
+			// Recorder 流量记录
+			auth.GET("/recorders", s.listRecorders)
+			auth.GET("/recorders/:id", s.getRecorder)
+			auth.POST("/recorders", s.createRecorder)
+			auth.PUT("/recorders/:id", s.updateRecorder)
+			auth.DELETE("/recorders/:id", s.deleteRecorder)
 		}
 	}
 

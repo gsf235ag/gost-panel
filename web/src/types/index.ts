@@ -351,3 +351,25 @@ export interface HostMapping extends BaseEntity {
   node_id?: number
   owner_id?: number
 }
+
+// Ingress 反向代理
+export interface Ingress extends BaseEntity {
+  name: string
+  rules: string // JSON: [{"hostname":"example.com","endpoint":"192.168.1.1:8080"}]
+  node_id?: number
+  owner_id?: number
+}
+
+// Recorder 流量记录
+export interface Recorder extends BaseEntity {
+  name: string
+  type: string // file, redis, http
+  config: string // JSON config
+  node_id?: number
+  owner_id?: number
+}
+
+export type IngressCreateRequest = Record<string, unknown>
+export type IngressUpdateRequest = Record<string, unknown>
+export type RecorderCreateRequest = Record<string, unknown>
+export type RecorderUpdateRequest = Record<string, unknown>
