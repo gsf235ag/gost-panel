@@ -73,7 +73,19 @@
 
 ## 快速开始
 
-### 二进制安装 (推荐)
+### 一键安装 (推荐)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AliceNetworks/gost-panel/main/scripts/install.sh | bash
+```
+
+自动完成：检测架构、下载最新版本、安装到 `/opt/gost-panel`、配置 systemd 服务、生成 JWT 密钥并启动。
+
+安装完成后访问 `http://your-ip:8080` 即可使用。
+
+**升级面板：** 重新执行上述命令即可。
+
+### 二进制手动安装
 
 从 [Releases](https://github.com/AliceNetworks/gost-panel/releases) 页面下载对应平台的预编译二进制文件。
 
@@ -88,34 +100,6 @@ chmod +x gost-panel-linux-amd64
 
 # 自定义端口
 ./gost-panel-linux-amd64 -listen :9000
-```
-
-### Systemd 服务部署
-
-```bash
-# 创建目录和复制二进制
-mkdir -p /opt/gost-panel
-cp gost-panel-linux-amd64 /opt/gost-panel/gost-panel
-
-# 创建 systemd 服务
-cat > /etc/systemd/system/gost-panel.service << 'EOF'
-[Unit]
-Description=GOST Panel
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/gost-panel
-ExecStart=/opt/gost-panel/gost-panel -listen :8080
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now gost-panel
 ```
 
 ### 命令行参数
