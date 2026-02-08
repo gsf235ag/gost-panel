@@ -1249,6 +1249,10 @@ func (s *Server) generateClientConfig(client *model.Client) map[string]interface
 								}(),
 								"dialer": map[string]interface{}{
 									"type": "tcp",
+									"metadata": map[string]interface{}{
+										"keepAlive":       true,
+										"keepAlivePeriod": "15s",
+									},
 								},
 							},
 						},
