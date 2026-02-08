@@ -33,6 +33,9 @@
               style="width: 200px"
               @update:value="handleSearch"
             />
+            <n-button :loading="loading" @click="loadClients">
+              刷新
+            </n-button>
             <n-button type="primary" @click="openCreateModal">
               添加客户端
             </n-button>

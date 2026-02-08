@@ -1371,6 +1371,7 @@ func (s *Server) agentHeartbeat(c *gin.Context) {
 	if err == nil {
 		s.svc.UpdateClient(client.ID, map[string]interface{}{
 			"status":      "online",
+			"last_seen":   time.Now(),
 			"traffic_in":  client.TrafficIn + req.TrafficIn,
 			"traffic_out": client.TrafficOut + req.TrafficOut,
 		})

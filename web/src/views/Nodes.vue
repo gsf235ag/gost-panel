@@ -33,6 +33,9 @@
               style="width: 200px"
               @update:value="handleSearch"
             />
+            <n-button :loading="loading" @click="loadNodes">
+              刷新
+            </n-button>
             <n-button :loading="pingLoading" @click="handlePingAll">
               测试延迟
             </n-button>
@@ -1453,6 +1456,7 @@ const formatHealthLogTime = (timestamp: string) => {
 onMounted(() => {
   loadNodes()
   loadTags()
+  handlePingAll()
 })
 
 // Keyboard shortcuts
