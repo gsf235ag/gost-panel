@@ -53,6 +53,11 @@ DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_VERSION/gost-pa
 # 创建安装目录
 mkdir -p $INSTALL_DIR/data
 
+# 停止已有服务
+if command -v $INSTALL_DIR/gost-panel &>/dev/null; then
+  $INSTALL_DIR/gost-panel service stop 2>/dev/null || true
+fi
+
 # 下载并解压
 echo "Downloading from $DOWNLOAD_URL ..."
 cd /tmp
@@ -64,33 +69,24 @@ mv gost-panel-linux-$ARCH $INSTALL_DIR/gost-panel
 chmod +x $INSTALL_DIR/gost-panel
 rm -f gost-panel.tar.gz
 
-# 生成 JWT Secret
-JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
-
-# 创建 systemd 服务
-cat > /etc/systemd/system/$SERVICE_NAME.service << EOF
-[Unit]
-Description=AliceNetworks Panel
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/gost-panel
-Restart=always
-RestartSec=5
-Environment=DB_PATH=$INSTALL_DIR/data/panel.db
-Environment=LISTEN_ADDR=:8080
-Environment=JWT_SECRET=$JWT_SECRET
-
-[Install]
-WantedBy=multi-user.target
+# 生成 JWT Secret (如果环境变量文件不存在)
+ENV_FILE="/etc/sysconfig/$SERVICE_NAME"
+if [ ! -f "$ENV_FILE" ]; then
+  JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
+  mkdir -p /etc/sysconfig
+  cat > "$ENV_FILE" << EOF
+DB_PATH=$INSTALL_DIR/data/panel.db
+LISTEN_ADDR=:8080
+JWT_SECRET=$JWT_SECRET
 EOF
+  echo -e "${GREEN}Environment file created: $ENV_FILE${NC}"
+else
+  echo -e "${YELLOW}Environment file already exists, keeping current config${NC}"
+fi
 
-# 启动服务
-systemctl daemon-reload
-systemctl enable $SERVICE_NAME
-systemctl start $SERVICE_NAME
+# 使用内置命令安装并启动服务
+$INSTALL_DIR/gost-panel service install
+$INSTALL_DIR/gost-panel service start
 
 # 等待启动
 sleep 2
@@ -101,9 +97,12 @@ echo -e "Panel URL: ${GREEN}http://$(hostname -I | awk '{print $1}'):8080${NC}"
 echo -e "Default credentials: ${YELLOW}admin / admin123${NC}"
 echo ""
 echo "Commands:"
-echo "  systemctl status $SERVICE_NAME"
-echo "  systemctl restart $SERVICE_NAME"
+echo "  $INSTALL_DIR/gost-panel service status"
+echo "  $INSTALL_DIR/gost-panel service restart"
+echo "  $INSTALL_DIR/gost-panel service stop"
 echo "  journalctl -u $SERVICE_NAME -f"
+echo ""
+echo "Config: $ENV_FILE"
 echo ""
 echo "Upgrade:"
 echo "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | bash"

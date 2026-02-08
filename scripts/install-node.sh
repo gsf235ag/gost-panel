@@ -490,7 +490,13 @@ install_service() {
 
     case $INIT_SYSTEM in
         systemd)
-            create_systemd_service "$use_agent"
+            if [[ "$use_agent" == "true" ]]; then
+                # 使用 agent 内置的 service 管理
+                $INSTALL_DIR/gost-agent service install -panel $PANEL_URL -token $TOKEN
+                $INSTALL_DIR/gost-agent service start
+            else
+                create_systemd_service "$use_agent"
+            fi
             ;;
         sysvinit)
             create_sysvinit_service "$use_agent"
@@ -541,8 +547,14 @@ main() {
             systemctl status gost-node --no-pager || true
             echo ""
             echo "Commands:"
-            echo "  systemctl status gost-node   - Check status"
-            echo "  systemctl restart gost-node  - Restart"
+            if [[ "$use_agent" == "true" ]]; then
+                echo "  $INSTALL_DIR/gost-agent service status   - Check status"
+                echo "  $INSTALL_DIR/gost-agent service restart  - Restart"
+                echo "  $INSTALL_DIR/gost-agent service stop     - Stop"
+            else
+                echo "  systemctl status gost-node   - Check status"
+                echo "  systemctl restart gost-node  - Restart"
+            fi
             echo "  journalctl -u gost-node -f   - View logs"
             ;;
         procd)
