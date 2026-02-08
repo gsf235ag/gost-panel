@@ -58,9 +58,13 @@ func getPanelURL(c *gin.Context) string {
 		host = c.Request.Host
 	}
 
-	// 检测协议
+	// 检测协议（多种反代头兼容）
 	scheme := "http"
 	if c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	} else if strings.EqualFold(c.GetHeader("X-Forwarded-Ssl"), "on") {
+		scheme = "https"
+	} else if c.GetHeader("X-Forwarded-Port") == "443" {
 		scheme = "https"
 	} else if c.Request.TLS != nil {
 		scheme = "https"
