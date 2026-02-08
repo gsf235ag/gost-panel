@@ -63,7 +63,6 @@
 - **一键克隆**: 节点/客户端/端口转发/隧道/代理链/节点组/规则 (Bypass/Admission/Ingress/Recorder/Router/SD)
 - **全局搜索**: 所有列表页支持实时搜索过滤
 - **数据导出**: JSON/YAML 格式导入导出 + 数据库备份恢复
-- **Swagger API 文档**: `/api/docs`
 - **暗色主题**: Glassmorphism 风格 UI
 - **移动端适配**: 响应式布局
 - **快捷键**: 快速新建/保存操作
@@ -278,7 +277,7 @@ systemctl enable --now gost-node
 
 ## 客户端部署
 
-用于反向隧道 (访问内网服务)。
+用于反向隧道 (访问内网服务)。客户端从面板删除后会自动卸载 (通过心跳检测 HTTP 410 信号)。
 
 ### 一键安装
 
@@ -326,45 +325,32 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-# 4. 创建心跳 (每分钟上报在线状态)
-echo "* * * * * curl -fsSL -X POST ${PANEL_URL}/agent/client-heartbeat/${TOKEN} > /dev/null 2>&1" | crontab -
+# 4. 创建心跳 (每分钟上报, 面板删除后自动卸载)
+cat > /etc/gost/heartbeat.sh << 'HEARTBEAT'
+#!/bin/bash
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PANEL_URL}/agent/client-heartbeat/${TOKEN}" 2>/dev/null)
+if [ "$HTTP_CODE" = "410" ]; then
+    systemctl stop gost-client 2>/dev/null
+    systemctl disable gost-client 2>/dev/null
+    rm -f /etc/systemd/system/gost-client.service
+    systemctl stop gost-heartbeat.timer 2>/dev/null
+    systemctl disable gost-heartbeat.timer 2>/dev/null
+    rm -f /etc/systemd/system/gost-heartbeat.{service,timer}
+    systemctl daemon-reload
+    (crontab -l 2>/dev/null | grep -v "gost/heartbeat") | crontab - 2>/dev/null
+    rm -rf /etc/gost /usr/local/bin/gost
+fi
+HEARTBEAT
+chmod +x /etc/gost/heartbeat.sh
+# 注意: 上面的 heredoc 使用了引号 'HEARTBEAT'，实际使用时需要去掉引号让变量展开
+# 或直接用 sed 替换 ${PANEL_URL} 和 ${TOKEN}
+sed -i "s|\${PANEL_URL}|${PANEL_URL}|g; s|\${TOKEN}|${TOKEN}|g" /etc/gost/heartbeat.sh
+echo "* * * * * /etc/gost/heartbeat.sh" | crontab -
 
 # 5. 启动服务
 systemctl daemon-reload
 systemctl enable --now gost-client
 ```
-
-## API 文档
-
-面板内置 Swagger API 文档，访问 `http://your-panel:8080/api/docs` 查看完整接口列表。
-
-### 主要接口
-
-| 类别 | 方法 | 路径 | 说明 |
-|------|------|------|------|
-| 认证 | POST | /api/login | 用户登录 |
-| 认证 | POST | /api/login/2fa | 双因素验证 |
-| 认证 | POST | /api/register | 用户注册 |
-| 节点 | GET/POST | /api/nodes | 列表/创建 |
-| 客户端 | GET/POST | /api/clients | 列表/创建 |
-| 端口转发 | GET/POST | /api/port-forwards | 列表/创建 |
-| 隧道 | GET/POST | /api/tunnels | 列表/创建 |
-| 代理链 | GET/POST | /api/proxy-chains | 列表/创建 |
-| 节点组 | GET/POST | /api/node-groups | 列表/创建 |
-| 规则 | GET/POST | /api/bypasses | 分流规则 |
-| 规则 | GET/POST | /api/admissions | 准入控制 |
-| 规则 | GET/POST | /api/host-mappings | 主机映射 |
-| 规则 | GET/POST | /api/ingresses | 反向代理 |
-| 规则 | GET/POST | /api/recorders | 流量记录 |
-| 规则 | GET/POST | /api/routers | 路由管理 |
-| 规则 | GET/POST | /api/sds | 服务发现 |
-| 用户 | GET/POST | /api/users | 用户管理 |
-| 套餐 | GET/POST | /api/plans | 套餐管理 |
-| 通知 | GET/POST | /api/notify-channels | 通知渠道 |
-| 告警 | GET/POST | /api/alert-rules | 告警规则 |
-| 统计 | GET | /api/stats | Dashboard 统计 |
-| 数据 | GET/POST | /api/export, /api/import | 数据导入导出 |
-| 实时 | GET | /ws | WebSocket 推送 |
 
 ## 项目结构
 
@@ -374,7 +360,7 @@ gost-panel/
 │   ├── panel/       # 面板主程序
 │   └── agent/       # 节点 Agent
 ├── internal/
-│   ├── api/         # HTTP API 处理 + Swagger 文档
+│   ├── api/         # HTTP API 处理
 │   ├── config/      # 配置管理
 │   ├── gost/        # GOST 配置生成器
 │   ├── model/       # 数据库模型
