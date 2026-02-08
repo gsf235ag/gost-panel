@@ -32,7 +32,7 @@ jobs:
           VERSION=$(git describe --tags --always)
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
           LDFLAGS="-s -w -X 'github.com/AliceNetworks/gost-panel/internal/api.CurrentAgentVersion=${VERSION}' -X 'github.com/AliceNetworks/gost-panel/internal/api.AgentBuildTime=${BUILD_TIME}'"
-          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-panel cmd/panel/main.go
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-panel ./cmd/panel/
 
       - name: Build Agent
         run: |
@@ -40,7 +40,7 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
           COMMIT="${GITHUB_SHA::8}"
           LDFLAGS="-s -w -X 'main.AgentVersion=${VERSION}' -X 'main.AgentBuildTime=${BUILD_TIME}' -X 'main.AgentCommit=${COMMIT}'"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-agent cmd/agent/main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-agent ./cmd/agent/
 
       - uses: actions/upload-artifact@v4
         with:

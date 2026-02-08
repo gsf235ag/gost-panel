@@ -45,7 +45,7 @@ cd "$PROJECT_ROOT"
 # 构建目标
 build_panel() {
     echo -e "${GREEN}Building Panel...${NC}"
-    GOMAXPROCS=1 go build -ldflags "${LDFLAGS}" -o gost-panel cmd/panel/main.go
+    GOMAXPROCS=1 go build -ldflags "${LDFLAGS}" -o gost-panel ./cmd/panel/
     echo -e "${GREEN}✓ Panel built: gost-panel${NC}"
 }
 
@@ -65,7 +65,7 @@ build_agent() {
     AGENT_LDFLAGS="${AGENT_LDFLAGS} -X 'main.AgentCommit=${COMMIT}'"
 
     mkdir -p dist/agents
-    GOOS=$os GOARCH=$arch go build -ldflags "${AGENT_LDFLAGS}" -o "$output" cmd/agent/main.go
+    GOOS=$os GOARCH=$arch go build -ldflags "${AGENT_LDFLAGS}" -o "$output" ./cmd/agent/
     echo -e "${GREEN}✓ Agent built: ${output}${NC}"
 }
 
