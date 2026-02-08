@@ -1303,7 +1303,7 @@ func (s *Server) agentRegister(c *gin.Context) {
 	// 尝试查找客户端
 	client, err := s.svc.GetClientByToken(req.Token)
 	if err == nil {
-		s.svc.UpdateClient(client.ID, map[string]interface{}{"status": "online"})
+		s.svc.UpdateClient(client.ID, map[string]interface{}{"status": "online", "last_seen": time.Now()})
 		c.JSON(http.StatusOK, gin.H{
 			"type":    "client",
 			"id":      client.ID,
